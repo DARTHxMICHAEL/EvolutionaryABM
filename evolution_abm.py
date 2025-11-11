@@ -200,7 +200,7 @@ class Grid:
 
 		return vision
 
-	def move_agent(self, use_nn):
+	def move_agent(self):
 		random.shuffle(self.agents)  # random move order
 
 		for agent in list(self.agents):  # copy to avoid iteration issues
@@ -247,9 +247,9 @@ class Grid:
 			agent.x, agent.y = nx, ny
 			self.place_object(agent)
 
-	def run_simulation(self, ticks=1, render=False, use_nn=False):
+	def run_simulation(self, ticks=1, render=False):
 		for tick in range(ticks):
-			self.move_agent(use_nn)
+			self.move_agent()
 
 			if render:
 				self.render()
@@ -422,7 +422,7 @@ def lyapunov_analysis(g1, g2, num_ticks=50, render=False):
 
 	return lyap, diffs
 
-def compare_grids(num_ticks=50, perturbation=(0,1), seed=123, render=False, use_nn=False):
+def compare_grids(num_ticks=50, perturbation=(0,1), seed=123, render=False, **grid_params):
 	"""
 	Compare two nearly identical grid simulations to estimate the Lyapunov exponent.
 
@@ -445,7 +445,7 @@ def compare_grids(num_ticks=50, perturbation=(0,1), seed=123, render=False, use_
 		Estimated Lyapunov exponent of the system.
 	"""
 	set_seed(seed)
-	g1 = Grid(50, 50, 20, 40, 30, 60, use_nn)
+	g1 = Grid(**grid_params)
 	g2 = copy.deepcopy(g1)
 
 	if g2.agents:
@@ -469,7 +469,7 @@ def compare_grids(num_ticks=50, perturbation=(0,1), seed=123, render=False, use_
 
 	return lyap
 
-def single_simulation(num_ticks=50, seed=123, render=False, use_nn=False):
+def single_simulation(num_ticks=50, seed=123, render=False, **grid_params):
 	"""
 	Run and analyze a single grid simulation.
 
@@ -489,7 +489,7 @@ def single_simulation(num_ticks=50, seed=123, render=False, use_nn=False):
 		The final grid state after simulation.
 	"""
 	set_seed(seed)
-	grid = Grid(50, 50, 20, 40, 30, 60, use_nn)
+	grid = Grid(**grid_params)
 
 	print("Initial Shannon entropy:", shannon_entropy(grid))
 
@@ -499,7 +499,7 @@ def single_simulation(num_ticks=50, seed=123, render=False, use_nn=False):
 	return grid
 
 
-def main_simulation(num_ticks=50, perturbation=(0, 1), seed=123, render=False, use_nn=False):
+def main_simulation(num_ticks=50, perturbation=(0, 1), seed=123, render=False, **grid_params):
 	"""
 	Execute the main experiment pipeline.
 
@@ -522,12 +522,28 @@ def main_simulation(num_ticks=50, perturbation=(0, 1), seed=123, render=False, u
 		Final grid state and estimated Lyapunov exponent.
 	"""
 
-	grid = single_simulation(num_ticks, seed, render, use_nn)
-	grid = single_simulation(num_ticks, seed, render, use_nn)
+	grid = single_simulation(num_ticks, seed, render, **grid_params)
+	grid = single_simulation(num_ticks, seed, render, **grid_params)
 	print("Lyapunov exponent comparison:")
-	lyap = compare_grids(num_ticks, perturbation, seed, render, use_nn)
+	lyap = compare_grids(num_ticks, perturbation, seed, render, **grid_params)
 	print("Estimated Lyapunov exponent:", lyap)
 
 
 # Main Execution
-main_simulation(10000, (3,3), 123, False, False)
+grid_params = {
+	"width": 50,
+	"height": 50,
+	"num_agents": 20,
+	"num_apples": 40,
+	"num_oranges": 30,
+	"num_walls": 60,
+	"use_nn": False
+}
+
+main_simulation(
+	num_ticks=1000,
+	perturbation=(3, 3),
+	seed=123,
+	render=False,
+	**grid_params
+)
