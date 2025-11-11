@@ -6,8 +6,13 @@ import os
 import math
 from collections import Counter
 
+directions = [
+	(-1, 0), (1, 0), (0, -1), (0, 1),  # left, right, down, up
+	(-1, -1), (-1, 1), (1, -1), (1, 1)  # diagonals
+]
+
 class Agent:
-	def __init__(self, x, y, sex, color=(0, 0, 1), energy=10):  # Blue
+	def __init__(self, x, y, sex, color, energy=10):
 		self.x = x
 		self.y = y
 		self.sex = sex
@@ -92,7 +97,9 @@ class Grid:
 
 		for _ in range(num_agents):
 			x, y = selected_positions[index]
-			agent = Agent(x, y, sex=random.randint(0, 1))
+			sex = random.randint(0, 1)
+			color = (0, 0, 1) if sex == 0 else (0, 0, 0.5)
+			agent = Agent(x, y, sex, color)
 			self.place_object(agent)
 			self.agents.append(agent)
 			index += 1
@@ -124,17 +131,71 @@ class Grid:
 			winner.energy += loser.energy
 			self.remove_object(loser)
 			self.agents.remove(loser)
+			return
+
 		# Mating scenario
-		#else:
+		total_energy = agent1.energy + agent2.energy
+		child_energy = total_energy / 2 / 2  # half split into two children
 
-	def move_agents(self):
-		directions = [
-			(-1, 0), (1, 0), (0, -1), (0, 1),  # left, right, down, up
-			(-1, -1), (-1, 1), (1, -1), (1, 1)  # diagonals
-		]
+		# remove parents
+		for parent in [agent1, agent2]:
+			self.remove_object(parent)
+			if parent in self.agents:
+				self.agents.remove(parent)
 
+		# center around mid-point between parents
+		cx = (agent1.x + agent2.x) // 2
+		cy = (agent1.y + agent2.y) // 2
+
+		possible_spots = [(cx + dx, cy + dy) for dx, dy in directions if self.is_empty(cx + dx, cy + dy)]
+		random.shuffle(possible_spots)
+
+		children_positions = possible_spots[:2]
+
+		for pos in children_positions:
+			x, y = pos
+			sex = random.randint(0, 1)
+			color = (0, 0, 1) if sex == 0 else (0, 0, 0.5)
+			child = Agent(x, y, sex, color, energy=child_energy)
+			self.place_object(child)
+			self.agents.append(child)
+
+	def get_agent_vision(self, agent):
+		"""
+		Get RGB color data from the 8 surrounding cells (Moore neighborhood).
+		Returns a numpy array of shape (8, 3) where each row is (R, G, B).
+
+		Out-of-bounds cells → black (0, 0, 0)
+		Empty cells → white (1, 1, 1)
+		"""
+		vision = np.zeros((8, 3))  # default black for all 8 directions
+
+		for i, (dx, dy) in enumerate(directions):
+			nx, ny = agent.x + dx, agent.y + dy
+
+			# Out of bounds check
+			if not (0 <= nx < self.height and 0 <= ny < self.width):
+				vision[i] = (0, 0, 0)
+				continue
+
+			obj = self.grid[nx][ny]
+
+			if obj is None:
+				vision[i] = (1, 1, 1)
+			elif hasattr(obj, "color"):
+				vision[i] = obj.color
+			else:
+				vision[i] = (0, 0, 0)
+
+		return vision
+
+	def move_agent(self):
 		random.shuffle(self.agents)  # random move order
 		for agent in list(self.agents):  # copy to avoid iteration issues
+
+			vision = self.get_agent_vision(agent)
+			agent.vision = vision  # NN input later
+
 			dx, dy = random.choice(directions)
 			nx, ny = agent.x + dx, agent.y + dy
 
@@ -169,7 +230,7 @@ class Grid:
 
 	def run_simulation(self, ticks=1, render=False):
 		for tick in range(ticks):
-			self.move_agents()
+			self.move_agent()
 
 			if render:
 				self.render()
