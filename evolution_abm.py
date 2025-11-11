@@ -41,13 +41,14 @@ class Wall:
 		self.color = color
 
 class Grid:
-	def __init__(self, width, height, num_agents, num_apples, num_oranges, num_walls=30):
+	def __init__(self, width, height, num_agents, num_apples, num_oranges, num_walls=30, use_nn=False):
 		self.width = width
 		self.height = height
 		self.grid = [[None for _ in range(width)] for _ in range(height)]
 		self.agents = []
 		self.food_items = []
 		self.walls = []
+		self.use_nn = use_nn
 
 		self.populate(num_agents, num_apples, num_oranges, num_walls)
 
@@ -100,6 +101,11 @@ class Grid:
 			sex = random.randint(0, 1)
 			color = (0, 0, 1) if sex == 0 else (0, 0, 0.5)
 			agent = Agent(x, y, sex, color)
+
+			# Placeholder for NN
+			if self.use_nn:
+				agent.nn = initialize_new_nn()
+
 			self.place_object(agent)
 			self.agents.append(agent)
 			index += 1
@@ -157,6 +163,11 @@ class Grid:
 			sex = random.randint(0, 1)
 			color = (0, 0, 1) if sex == 0 else (0, 0, 0.5)
 			child = Agent(x, y, sex, color, energy=child_energy)
+
+			# Placeholder for NN
+			if self.use_nn:
+				child.nn = cross_mutate(agent1.nn, agent2.nn)
+
 			self.place_object(child)
 			self.agents.append(child)
 
@@ -189,14 +200,22 @@ class Grid:
 
 		return vision
 
-	def move_agent(self):
+	def move_agent(self, use_nn):
 		random.shuffle(self.agents)  # random move order
+
 		for agent in list(self.agents):  # copy to avoid iteration issues
 
-			vision = self.get_agent_vision(agent)
-			agent.vision = vision  # NN input later
+			# Placeholder for NN
+			if self.use_nn:
+				vision = self.get_agent_vision(agent)
+				agent.vision = vision
 
-			dx, dy = random.choice(directions)
+				dx, dy = agent.nn_output_to_move()
+				pass
+			else:
+				# Random movement (default behavior)
+				dx, dy = random.choice(directions)
+
 			nx, ny = agent.x + dx, agent.y + dy
 
 			# Check bounds
@@ -228,9 +247,9 @@ class Grid:
 			agent.x, agent.y = nx, ny
 			self.place_object(agent)
 
-	def run_simulation(self, ticks=1, render=False):
+	def run_simulation(self, ticks=1, render=False, use_nn=False):
 		for tick in range(ticks):
-			self.move_agent()
+			self.move_agent(use_nn)
 
 			if render:
 				self.render()
@@ -403,7 +422,7 @@ def lyapunov_analysis(g1, g2, num_ticks=50, render=False):
 
 	return lyap, diffs
 
-def compare_grids(num_ticks=50, perturbation=(0,1), seed=123, render=False):
+def compare_grids(num_ticks=50, perturbation=(0,1), seed=123, render=False, use_nn=False):
 	"""
 	Compare two nearly identical grid simulations to estimate the Lyapunov exponent.
 
@@ -426,7 +445,7 @@ def compare_grids(num_ticks=50, perturbation=(0,1), seed=123, render=False):
 		Estimated Lyapunov exponent of the system.
 	"""
 	set_seed(seed)
-	g1 = Grid(50, 50, 20, 40, 30, 60)
+	g1 = Grid(50, 50, 20, 40, 30, 60, use_nn)
 	g2 = copy.deepcopy(g1)
 
 	if g2.agents:
@@ -450,7 +469,7 @@ def compare_grids(num_ticks=50, perturbation=(0,1), seed=123, render=False):
 
 	return lyap
 
-def single_simulation(num_ticks=50, seed=123, render=False):
+def single_simulation(num_ticks=50, seed=123, render=False, use_nn=False):
 	"""
 	Run and analyze a single grid simulation.
 
@@ -470,8 +489,7 @@ def single_simulation(num_ticks=50, seed=123, render=False):
 		The final grid state after simulation.
 	"""
 	set_seed(seed)
-	grid = Grid(width=50, height=50, num_agents=20,
-				num_apples=40, num_oranges=30, num_walls=60)
+	grid = Grid(50, 50, 20, 40, 30, 60, use_nn)
 
 	print("Initial Shannon entropy:", shannon_entropy(grid))
 
@@ -481,7 +499,7 @@ def single_simulation(num_ticks=50, seed=123, render=False):
 	return grid
 
 
-def main_simulation(num_ticks=50, perturbation=(0, 1), seed=123, render=False):
+def main_simulation(num_ticks=50, perturbation=(0, 1), seed=123, render=False, use_nn=False):
 	"""
 	Execute the main experiment pipeline.
 
@@ -504,12 +522,12 @@ def main_simulation(num_ticks=50, perturbation=(0, 1), seed=123, render=False):
 		Final grid state and estimated Lyapunov exponent.
 	"""
 
-	grid = single_simulation(num_ticks, seed, render)
-	grid = single_simulation(num_ticks, seed, render)
+	grid = single_simulation(num_ticks, seed, render, use_nn)
+	grid = single_simulation(num_ticks, seed, render, use_nn)
 	print("Lyapunov exponent comparison:")
-	lyap = compare_grids(num_ticks, perturbation, seed, render)
+	lyap = compare_grids(num_ticks, perturbation, seed, render, use_nn)
 	print("Estimated Lyapunov exponent:", lyap)
 
 
 # Main Execution
-main_simulation(10000, (3,3), 123, False)
+main_simulation(10000, (3,3), 123, False, False)
