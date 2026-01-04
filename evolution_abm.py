@@ -28,14 +28,14 @@ class Food:
 
 class Apple(Food):
 	def __init__(self, x, y):
-		super().__init__(x, y, color=(1, 0, 0), energy=5)  # Red
+		super().__init__(x, y, color=(1, 0, 0), energy=5)  # red
 
 class Orange(Food):
 	def __init__(self, x, y):
-		super().__init__(x, y, color=(1, 0.5, 0), energy=10)  # Orange
+		super().__init__(x, y, color=(1, 0.5, 0), energy=10)  # orange
 
 class Wall:
-	def __init__(self, x, y, color=(0, 1, 0)):  # Green
+	def __init__(self, x, y, color=(0, 1, 0)):  # green
 		self.x = x
 		self.y = y
 		self.color = color
@@ -143,13 +143,13 @@ class Grid:
 		total_energy = agent1.energy + agent2.energy
 		child_energy = total_energy / 2 / 2  # half split into two children
 
-		# remove parents
+		# Remove parents
 		for parent in [agent1, agent2]:
 			self.remove_object(parent)
 			if parent in self.agents:
 				self.agents.remove(parent)
 
-		# center around mid-point between parents
+		# Center around mid-point between parents
 		cx = (agent1.x + agent2.x) // 2
 		cy = (agent1.y + agent2.y) // 2
 
@@ -369,7 +369,7 @@ def grid_difference(g1, g2):
 					diff += 1
 	return diff / total
 
-def lyapunov_analysis(g1, g2, num_ticks=50, render=False):
+def lyapunov_analysis(g1, g2, num_ticks=50, render=False, final_render=True):
 	"""
 	Estimate the Lyapunov exponent from two initially similar grid simulations.
 
@@ -402,6 +402,7 @@ def lyapunov_analysis(g1, g2, num_ticks=50, render=False):
 	print("Initial Shannon entropy:", shannon_entropy(g1))
 
 	g1.run_simulation(num_ticks, render)
+	g1.render() if final_render == True else None
 
 	print("Final Shannon entropy:", shannon_entropy(g1))
 	
@@ -411,6 +412,7 @@ def lyapunov_analysis(g1, g2, num_ticks=50, render=False):
 	print("Initial Shannon entropy:", shannon_entropy(g2))
 
 	g2.run_simulation(num_ticks, render)
+	g2.render() if final_render == True else None
 
 	print("Final Shannon entropy:", shannon_entropy(g2))
 
@@ -422,7 +424,7 @@ def lyapunov_analysis(g1, g2, num_ticks=50, render=False):
 
 	return lyap, diffs
 
-def compare_grids(num_ticks=50, perturbation=(0,1), seed=123, render=False, **grid_params):
+def compare_grids(num_ticks=50, perturbation=(0,1), seed=123, render=False, final_render=True, **grid_params):
 	"""
 	Compare two nearly identical grid simulations to estimate the Lyapunov exponent.
 
@@ -456,7 +458,7 @@ def compare_grids(num_ticks=50, perturbation=(0,1), seed=123, render=False, **gr
 			agent.x, agent.y = nx, ny
 			g2.place_object(agent)
 
-	lyap, diffs = lyapunov_analysis(g1, g2, num_ticks, render)
+	lyap, diffs = lyapunov_analysis(g1, g2, num_ticks, render, final_render)
 
 	plt.figure(figsize=(8,5))
 	plt.plot(range(len(diffs)), diffs, marker='o')
@@ -469,7 +471,41 @@ def compare_grids(num_ticks=50, perturbation=(0,1), seed=123, render=False, **gr
 
 	return lyap
 
-def single_simulation(num_ticks=50, seed=123, render=False, **grid_params):
+
+def check_determinism(num_ticks, seed, render=False, final_render=True, **grid_params):
+	"""
+	Verify whether the simulation environment is fully deterministic.
+
+	Runs two simulations with identical initial conditions and checks
+	whether the final grid states are identical.
+
+	Returns
+	-------
+	bool
+		True if deterministic, False otherwise.
+	"""
+	print("----- DETERMINISTIC CHECK -----")
+
+	g1 = single_simulation(num_ticks, seed, render, final_render, **grid_params)
+	g2 = single_simulation(num_ticks, seed, render, final_render, **grid_params)
+
+	diff = grid_difference(g1, g2)
+
+	print(
+		"Difference between two grids with identical initial conditions "
+		f"(expected 0.0): {diff}"
+	)
+
+	if diff > 0:
+		print("Determinism check FAILED.")
+		return False
+
+	print("Determinism check PASSED.")
+	print("----- END OF DETERMINISTIC CHECK -----")
+	return True
+
+
+def single_simulation(num_ticks=50, seed=123, render=False, final_render=True, **grid_params):
 	"""
 	Run and analyze a single grid simulation.
 
@@ -494,12 +530,13 @@ def single_simulation(num_ticks=50, seed=123, render=False, **grid_params):
 	print("Initial Shannon entropy:", shannon_entropy(grid))
 
 	grid.run_simulation(num_ticks, render)
+	grid.render() if final_render == True else None
 
 	print("Final Shannon entropy:", shannon_entropy(grid))
 	return grid
 
 
-def main_simulation(num_ticks=50, perturbation=(0, 1), seed=123, render=False, **grid_params):
+def main_simulation(num_ticks=50, perturbation=(0, 1), seed=123, render=False, final_render=True, **grid_params):
 	"""
 	Execute the main experiment pipeline.
 
@@ -522,11 +559,16 @@ def main_simulation(num_ticks=50, perturbation=(0, 1), seed=123, render=False, *
 		Final grid state and estimated Lyapunov exponent.
 	"""
 
-	grid = single_simulation(num_ticks, seed, render, **grid_params)
-	grid = single_simulation(num_ticks, seed, render, **grid_params)
-	print("Lyapunov exponent comparison:")
-	lyap = compare_grids(num_ticks, perturbation, seed, render, **grid_params)
+	is_deterministic = check_determinism(num_ticks=num_ticks,seed=seed,render=render,final_render=final_render,**grid_params)
+
+	if not is_deterministic:
+		raise RuntimeError("Simulation environment is non-deterministic.")
+
+	print("----- LYAPUNOV EXPONENT COMPARISON -----")
+	lyap = compare_grids(num_ticks, perturbation, seed, render, final_render, **grid_params)
 	print("Estimated Lyapunov exponent:", lyap)
+	print("----- END OF LYAPUNOV EXPONENT COMPARISON -----")
+
 
 
 # Main Execution
@@ -545,5 +587,6 @@ main_simulation(
 	perturbation=(3, 3),
 	seed=123,
 	render=False,
+	final_render=False, 
 	**grid_params
 )
