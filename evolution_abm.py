@@ -125,6 +125,9 @@ class Grid:
 			index += 1
 
 	def meet(self, agent1, agent2):
+		if agent1 not in self.agents or agent2 not in self.agents:
+			return
+
 		# Fighting scenario
 		if agent1.sex == agent2.sex:
 			if agent1.energy > agent2.energy:
@@ -146,8 +149,7 @@ class Grid:
 		# Remove parents
 		for parent in [agent1, agent2]:
 			self.remove_object(parent)
-			if parent in self.agents:
-				self.agents.remove(parent)
+			self.agents.remove(parent)
 
 		# Center around mid-point between parents
 		cx = (agent1.x + agent2.x) // 2
@@ -587,6 +589,6 @@ main_simulation(
 	perturbation=(3, 3),
 	seed=123,
 	render=False,
-	final_render=False, 
+	final_render=True, 
 	**grid_params
 )
