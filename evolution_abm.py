@@ -41,9 +41,14 @@ class Wall:
 		self.color = color
 
 class Grid:
-	def __init__(self, width, height, num_agents, num_apples, num_oranges, num_walls=30, use_nn=False):
+	def __init__(self, width, height, metabolic_cost, min_child_energy, reproduction_cost, food_respawn_rate,
+	num_agents, num_apples, num_oranges, num_walls=30, use_nn=False):
 		self.width = width
 		self.height = height
+		self.metabolic_cost = metabolic_cost
+		self.min_child_energy = min_child_energy
+		self.reproduction_cost = reproduction_cost
+		self.food_respawn_rate = food_respawn_rate
 		self.grid = [[None for _ in range(width)] for _ in range(height)]
 		self.agents = []
 		self.food_items = []
@@ -144,27 +149,43 @@ class Grid:
 
 		# Mating scenario
 		total_energy = agent1.energy + agent2.energy
-		child_energy = total_energy / 2 / 2  # half split into two children
 
-		# Remove parents
-		for parent in [agent1, agent2]:
-			self.remove_object(parent)
-			self.agents.remove(parent)
+		min_child_energy = 6
+		reproduction_cost = 4
+
+		agent1.energy -= reproduction_cost
+		agent2.energy -= reproduction_cost
+
+		max_children = int(total_energy // min_child_energy)
+
+		if max_children == 0:
+			return
 
 		# Center around mid-point between parents
 		cx = (agent1.x + agent2.x) // 2
 		cy = (agent1.y + agent2.y) // 2
 
-		possible_spots = [(cx + dx, cy + dy) for dx, dy in directions if self.is_empty(cx + dx, cy + dy)]
+		possible_spots = [
+			(cx + dx, cy + dy) 
+			for dx, dy in directions 
+			if self.is_empty(cx + dx, cy + dy)
+		]
 		random.shuffle(possible_spots)
 
-		children_positions = possible_spots[:2]
+		num_children = min(len(possible_spots), max_children)
+		
+		if num_children == 0:
+			return
+
+		energy_per_child = total_energy / num_children
+
+		children_positions = possible_spots[:num_children]
 
 		for pos in children_positions:
 			x, y = pos
 			sex = random.randint(0, 1)
 			color = (0, 0, 1) if sex == 0 else (0, 0, 0.5)
-			child = Agent(x, y, sex, color, energy=child_energy)
+			child = Agent(x, y, sex, color, energy=energy_per_child)
 
 			# Placeholder for NN
 			if self.use_nn:
@@ -172,6 +193,11 @@ class Grid:
 
 			self.place_object(child)
 			self.agents.append(child)
+
+		# Remove parents
+		for parent in [agent1, agent2]:
+			self.remove_object(parent)
+			self.agents.remove(parent)
 
 	def get_agent_vision(self, agent):
 		"""
@@ -203,9 +229,19 @@ class Grid:
 		return vision
 
 	def move_agent(self):
+
 		random.shuffle(self.agents)  # random move order
 
 		for agent in list(self.agents):  # copy to avoid iteration issues
+			if agent not in self.agents:
+				return
+
+			# Decay mechanism
+			agent.energy -= self.metabolic_cost
+			if agent.energy <= 0:
+				self.remove_object(agent)
+				self.agents.remove(agent)
+				continue
 
 			# Placeholder for NN
 			if self.use_nn:
@@ -249,9 +285,25 @@ class Grid:
 			agent.x, agent.y = nx, ny
 			self.place_object(agent)
 
+	def respawn_food(self):
+		empty = self.get_empty_positions()
+		if not empty:
+			return
+
+		n = int(len(empty) * self.food_respawn_rate)
+		for x, y in random.sample(empty, n):
+			if random.random() < 0.6:
+				food = Apple(x, y)
+			else:
+				food = Orange(x, y)
+
+			self.place_object(food)
+			self.food_items.append(food)
+
 	def run_simulation(self, ticks=1, render=False):
 		for tick in range(ticks):
 			self.move_agent()
+			self.respawn_food()
 
 			if render:
 				self.render()
@@ -577,6 +629,10 @@ def main_simulation(num_ticks=50, perturbation=(0, 1), seed=123, render=False, f
 grid_params = {
 	"width": 50,
 	"height": 50,
+	"metabolic_cost": 0.7,
+	"min_child_energy": 6,
+	"reproduction_cost": 4,
+	"food_respawn_rate": 0.02,
 	"num_agents": 20,
 	"num_apples": 40,
 	"num_oranges": 30,
