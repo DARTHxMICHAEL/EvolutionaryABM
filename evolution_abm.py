@@ -421,6 +421,9 @@ def grid_difference(g1, g2):
 			elif (c1 is not None) and (c2 is not None):
 				if type(c1) != type(c2):  # different entity types
 					diff += 1
+				elif type(c1) == Agent:
+					if c1.sex != c2.sex:
+						diff += 1
 	return diff / total
 
 def lyapunov_analysis(g1, g2, num_ticks=50, render=False, final_render=True):
