@@ -150,8 +150,8 @@ class Grid:
 		# Mating scenario
 		total_energy = agent1.energy + agent2.energy
 
-		min_child_energy = 6
-		reproduction_cost = 4
+		min_child_energy = self.min_child_energy
+		reproduction_cost = self.reproduction_cost
 
 		agent1.energy -= reproduction_cost
 		agent2.energy -= reproduction_cost
@@ -165,10 +165,13 @@ class Grid:
 		cx = (agent1.x + agent2.x) // 2
 		cy = (agent1.y + agent2.y) // 2
 
+		R = 2  # reproduction radius
 		possible_spots = [
-			(cx + dx, cy + dy) 
-			for dx, dy in directions 
-			if self.is_empty(cx + dx, cy + dy)
+			(cx + dx, cy + dy)
+			for dx in range(-R, R + 1)
+			for dy in range(-R, R + 1)
+			if not (dx == 0 and dy == 0)
+			and self.is_empty(cx + dx, cy + dy)
 		]
 		random.shuffle(possible_spots)
 
@@ -199,34 +202,52 @@ class Grid:
 			self.remove_object(parent)
 			self.agents.remove(parent)
 
-	def get_agent_vision(self, agent):
+	def get_agent_vision(self, agent, range_ext=2):
 		"""
-		Get RGB color data from the 8 surrounding cells (Moore neighborhood).
-		Returns a numpy array of shape (8, 3) where each row is (R, G, B).
+		Mixed vision:
+		- Immediate 8-cell Moore neighborhood
+		- Cardinal extensions (N, S, E, W) up to range_ext
 
-		Out-of-bounds cells → black (0, 0, 0)
-		Empty cells → white (1, 1, 1)
+		Returns:
+			np.ndarray of shape ((8 + 4*range_ext), 3)
 		"""
-		vision = np.zeros((8, 3))  # default black for all 8 directions
 
-		for i, (dx, dy) in enumerate(directions):
+		vision = []
+
+		# --- Moore neighborhood ---
+		for dx, dy in directions:
 			nx, ny = agent.x + dx, agent.y + dy
 
-			# Out of bounds check
 			if not (0 <= nx < self.height and 0 <= ny < self.width):
-				vision[i] = (0, 0, 0)
-				continue
-
-			obj = self.grid[nx][ny]
-
-			if obj is None:
-				vision[i] = (1, 1, 1)
-			elif hasattr(obj, "color"):
-				vision[i] = obj.color
+				vision.append((0, 0, 0))
 			else:
-				vision[i] = (0, 0, 0)
+				obj = self.grid[nx][ny]
+				if obj is None:
+					vision.append((1, 1, 1))
+				elif hasattr(obj, "color"):
+					vision.append(obj.color)
+				else:
+					vision.append((0, 0, 0))
 
-		return vision
+		# --- Cardinal extensions ---
+		cardinal_dirs = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
+		for dx, dy in cardinal_dirs:
+			for r in range(1, range_ext + 1):
+				nx, ny = agent.x + dx * r, agent.y + dy * r
+
+				if not (0 <= nx < self.height and 0 <= ny < self.width):
+					vision.append((0, 0, 0))
+				else:
+					obj = self.grid[nx][ny]
+					if obj is None:
+						vision.append((1, 1, 1))
+					elif hasattr(obj, "color"):
+						vision.append(obj.color)
+					else:
+						vision.append((0, 0, 0))
+
+		return np.array(vision)
 
 	def move_agent(self):
 
@@ -324,8 +345,11 @@ class Grid:
 		num_apples = sum(isinstance(f, Apple) for f in self.food_items)
 		num_oranges = sum(isinstance(f, Orange) for f in self.food_items)
 
+		combined_energy = sum(agent.energy for agent in self.agents)
+
 		title = (
 			f"Agents: {len(self.agents)} | "
+			f"Total agents energy: {combined_energy:.2f} | "
 			f"Apples: {num_apples} | "
 			f"Oranges: {num_oranges} | "
 			f"Walls: {len(self.walls)}"
@@ -352,9 +376,17 @@ def set_seed(seed):
 	np.random.seed(seed)
 	os.environ['PYTHONHASHSEED'] = str(seed)
 
-def shannon_entropy(grid):
+
+def shannon_entropy(grid, energy_eps=6):
 	"""
 	Compute the Shannon entropy of the grid's cell states.
+
+	Parameters
+	----------
+	grid : Grid
+		Grid to perform calculations for.
+	energy_eps : int, optional
+		Energy difference required for same sex agent being classified as different.
 
 	The entropy quantifies the distribution uniformity of cell types (e.g., agents,
 	apples, oranges, walls, and empty cells) using the formula:
@@ -379,7 +411,10 @@ def shannon_entropy(grid):
 			if cell is None:
 				states.append("Empty")
 			elif isinstance(cell, Agent):
-				states.append("Agent")
+				sex = "M" if cell.sex == 0 else "F"
+				energy_class = "HighE" if cell.energy >= energy_eps else "LowE"
+
+				states.append(f"Agent_{sex}_{energy_class}")
 			elif isinstance(cell, Apple):
 				states.append("Apple")
 			elif isinstance(cell, Orange):
@@ -394,7 +429,7 @@ def shannon_entropy(grid):
 	return entropy
 
 
-def grid_difference(g1, g2):
+def grid_difference(g1, g2, energy_eps):
 	"""
 	Compute the normalized structural difference between two grids.
 
@@ -405,6 +440,8 @@ def grid_difference(g1, g2):
 	----------
 	g1, g2 : Grid
 		Two grid instances of identical dimensions to compare.
+	energy_eps : int, optional
+		Energy difference required for same sex agent being classified as different.
 
 	Returns
 	-------
@@ -422,11 +459,12 @@ def grid_difference(g1, g2):
 				if type(c1) != type(c2):  # different entity types
 					diff += 1
 				elif type(c1) == Agent:
-					if c1.sex != c2.sex:
+					if (c1.sex != c2.sex) or (abs(c1.energy - c2.energy) > energy_eps):
 						diff += 1
 	return diff / total
 
-def lyapunov_analysis(g1, g2, num_ticks=50, render=False, final_render=True):
+
+def lyapunov_analysis(g1, g2, num_ticks=50, energy_eps=6, render=False, final_render=True):
 	"""
 	Estimate the Lyapunov exponent from two initially similar grid simulations.
 
@@ -444,36 +482,40 @@ def lyapunov_analysis(g1, g2, num_ticks=50, render=False, final_render=True):
 		Two grid instances initialized with a small perturbation between them.
 	num_ticks : int, optional
 		Number of simulation steps to run for each grid. Default is 50.
+	energy_eps : int, optional
+		Energy difference required for same sex agent being classified as different.
 
 	Returns
 	-------
 	tuple of (float, list)
 		The estimated Lyapunov exponent and the list of difference values per tick.
 	"""
-	d0 = max(grid_difference(g1, g2), 1e-6)
+	d0 = max(grid_difference(g1, g2, energy_eps), 1e-6)
 	diffs = [d0]
 
 	state = np.random.get_state()
 	random_state = random.getstate()
 
-	print("Initial Shannon entropy:", shannon_entropy(g1))
+	g1.render() if final_render == True else None
+	print("Initial Shannon entropy:", shannon_entropy(g1, energy_eps))
 
 	g1.run_simulation(num_ticks, render)
 	g1.render() if final_render == True else None
 
-	print("Final Shannon entropy:", shannon_entropy(g1))
+	print("Final Shannon entropy:", shannon_entropy(g1, energy_eps))
 	
 	np.random.set_state(state)
 	random.setstate(random_state)
 
-	print("Initial Shannon entropy:", shannon_entropy(g2))
+	g2.render() if final_render == True else None
+	print("Initial Shannon entropy:", shannon_entropy(g2, energy_eps))
 
 	g2.run_simulation(num_ticks, render)
 	g2.render() if final_render == True else None
 
-	print("Final Shannon entropy:", shannon_entropy(g2))
+	print("Final Shannon entropy:", shannon_entropy(g2, energy_eps))
 
-	d = grid_difference(g1, g2)
+	d = grid_difference(g1, g2, energy_eps)
 	diffs.append(d)
 
 	final_diff = max(diffs[-1], 1e-6)
@@ -481,7 +523,8 @@ def lyapunov_analysis(g1, g2, num_ticks=50, render=False, final_render=True):
 
 	return lyap, diffs
 
-def compare_grids(num_ticks=50, perturbation=(0,1), seed=123, render=False, final_render=True, **grid_params):
+
+def compare_grids(num_ticks=50, num_perturbed_agents=1, seed=123, render=False, final_render=True, **grid_params):
 	"""
 	Compare two nearly identical grid simulations to estimate the Lyapunov exponent.
 
@@ -493,8 +536,8 @@ def compare_grids(num_ticks=50, perturbation=(0,1), seed=123, render=False, fina
 	----------
 	num_ticks : int, optional
 		Number of simulation ticks to run. Default is 50.
-	perturbation : tuple of (int, int), optional
-		Offset (dx, dy) used to slightly move one agent in the copied grid.
+	num_perturbed_agents : int, optional
+		Number of agents to be perturbated (by adding energy).
 	seed : int, optional
 		Random seed ensuring deterministic setup. Default is 123.
 
@@ -508,14 +551,13 @@ def compare_grids(num_ticks=50, perturbation=(0,1), seed=123, render=False, fina
 	g2 = copy.deepcopy(g1)
 
 	if g2.agents:
-		agent = g2.agents[0]
-		nx, ny = agent.x + perturbation[0], agent.y + perturbation[1]
-		if 0 <= nx < g2.height and 0 <= ny < g2.width and g2.is_empty(nx, ny):
-			g2.remove_object(agent)
-			agent.x, agent.y = nx, ny
-			g2.place_object(agent)
+		k = min(num_perturbed_agents, len(g2.agents))
+		perturbed = random.sample(g2.agents, k)
 
-	lyap, diffs = lyapunov_analysis(g1, g2, num_ticks, render, final_render)
+		for agent in perturbed:
+			agent.energy += g2.min_child_energy
+
+	lyap, diffs = lyapunov_analysis(g1, g2, num_ticks, grid_params['min_child_energy'], render, final_render)
 
 	plt.figure(figsize=(8,5))
 	plt.plot(range(len(diffs)), diffs, marker='o')
@@ -546,7 +588,7 @@ def check_determinism(num_ticks, seed, render=False, final_render=True, **grid_p
 	g1 = single_simulation(num_ticks, seed, render, final_render, **grid_params)
 	g2 = single_simulation(num_ticks, seed, render, final_render, **grid_params)
 
-	diff = grid_difference(g1, g2)
+	diff = grid_difference(g1, g2, grid_params['min_child_energy'])
 
 	print(
 		"Difference between two grids with identical initial conditions "
@@ -584,16 +626,17 @@ def single_simulation(num_ticks=50, seed=123, render=False, final_render=True, *
 	set_seed(seed)
 	grid = Grid(**grid_params)
 
-	print("Initial Shannon entropy:", shannon_entropy(grid))
+	grid.render() if final_render == True else None
+	print("Initial Shannon entropy:", shannon_entropy(grid, grid_params['min_child_energy']))
 
 	grid.run_simulation(num_ticks, render)
 	grid.render() if final_render == True else None
 
-	print("Final Shannon entropy:", shannon_entropy(grid))
+	print("Final Shannon entropy:", shannon_entropy(grid, grid_params['min_child_energy']))
 	return grid
 
 
-def main_simulation(num_ticks=50, perturbation=(0, 1), seed=123, render=False, final_render=True, **grid_params):
+def main_simulation(num_ticks=50, num_perturbed_agents=1, seed=123, render=False, final_render=True, **grid_params):
 	"""
 	Execute the main experiment pipeline.
 
@@ -605,8 +648,8 @@ def main_simulation(num_ticks=50, perturbation=(0, 1), seed=123, render=False, f
 	----------
 	num_ticks : int, optional
 		Number of simulation ticks to run. Default is 50.
-	perturbation : tuple of (int, int), optional
-		Small positional offset applied to one agent for Lyapunov comparison.
+	num_perturbed_agents : int, optional
+		Number of agents to be perturbated (by adding energy).
 	seed : int, optional
 		Random seed to ensure deterministic behavior. Default is 123.
 
@@ -622,7 +665,7 @@ def main_simulation(num_ticks=50, perturbation=(0, 1), seed=123, render=False, f
 		raise RuntimeError("Simulation environment is non-deterministic.")
 
 	print("----- LYAPUNOV EXPONENT COMPARISON -----")
-	lyap = compare_grids(num_ticks, perturbation, seed, render, final_render, **grid_params)
+	lyap = compare_grids(num_ticks, num_perturbed_agents, seed, render, final_render, **grid_params)
 	print("Estimated Lyapunov exponent:", lyap)
 	print("----- END OF LYAPUNOV EXPONENT COMPARISON -----")
 
@@ -632,9 +675,9 @@ def main_simulation(num_ticks=50, perturbation=(0, 1), seed=123, render=False, f
 grid_params = {
 	"width": 50,
 	"height": 50,
-	"metabolic_cost": 0.7,
-	"min_child_energy": 6,
-	"reproduction_cost": 4,
+	"metabolic_cost":1.2,
+	"min_child_energy": 7,
+	"reproduction_cost": 5,
 	"food_respawn_rate": 0.02,
 	"num_agents": 20,
 	"num_apples": 40,
@@ -645,7 +688,7 @@ grid_params = {
 
 main_simulation(
 	num_ticks=1000,
-	perturbation=(3, 3),
+	num_perturbed_agents=1,
 	seed=123,
 	render=False,
 	final_render=True, 
