@@ -550,12 +550,27 @@ def compare_grids(num_ticks=50, num_perturbed_agents=1, seed=123, render=False, 
 	g1 = Grid(**grid_params)
 	g2 = copy.deepcopy(g1)
 
+	"""
+	OLD
+	perturbation=(3,3)
 	if g2.agents:
+		agent = g2.agents[0]
+		nx, ny = agent.x + perturbation[0], agent.y + perturbation[1]
+		if 0 <= nx < g2.height and 0 <= ny < g2.width and g2.is_empty(nx, ny):
+			g2.remove_object(agent)
+			agent.x, agent.y = nx, ny
+			g2.place_object(agent)
+	"""
+
+	if g2.agents:
+		local_rng = random.Random(seed + 999) # don't advance the global rng
+
 		k = min(num_perturbed_agents, len(g2.agents))
-		perturbed = random.sample(g2.agents, k)
+		perturbed = local_rng.sample(g2.agents, k)
 
 		for agent in perturbed:
 			agent.energy += g2.min_child_energy
+
 
 	lyap, diffs = lyapunov_analysis(g1, g2, num_ticks, grid_params['min_child_energy'], render, final_render)
 
@@ -675,7 +690,7 @@ def main_simulation(num_ticks=50, num_perturbed_agents=1, seed=123, render=False
 grid_params = {
 	"width": 50,
 	"height": 50,
-	"metabolic_cost":1.2,
+	"metabolic_cost":0.9,
 	"min_child_energy": 7,
 	"reproduction_cost": 5,
 	"food_respawn_rate": 0.02,
