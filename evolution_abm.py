@@ -203,52 +203,49 @@ class Grid:
 			self.remove_object(parent)
 			self.agents.remove(parent)
 
-	def get_agent_vision(self, agent, range_ext=2):
+	def get_agent_vision(self, agent, vision_range=8):
 		"""
-		Mixed vision:
-		- Immediate 8-cell Moore neighborhood
-		- Cardinal extensions (N, S, E, W) up to range_ext
+		Ray-cast vision:
+		For each of 8 directions:
+			- Find first object within vision_range
+			- Encode as [R, G, B, normalized_distance]
+
+		If nothing is detected within range:
+			return background white (1,1,1) with distance = 1.0
 
 		Returns:
-			np.ndarray of shape ((8 + 4*range_ext), 3)
+			np.ndarray of shape (8, 4)
 		"""
-
 		vision = []
 
-		# --- Moore neighborhood ---
 		for dx, dy in directions:
-			nx, ny = agent.x + dx, agent.y + dy
 
-			if not (0 <= nx < self.height and 0 <= ny < self.width):
-				vision.append((0, 0, 0))
-			else:
-				obj = self.grid[nx][ny]
-				if obj is None:
-					vision.append((1, 1, 1))
-				elif hasattr(obj, "color"):
-					vision.append(obj.color)
-				else:
-					vision.append((0, 0, 0))
+			detected = False
 
-		# --- Cardinal extensions ---
-		cardinal_dirs = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+			for r in range(1, vision_range + 1):
+				nx = agent.x + dx * r
+				ny = agent.y + dy * r
 
-		for dx, dy in cardinal_dirs:
-			for r in range(1, range_ext + 1):
-				nx, ny = agent.x + dx * r, agent.y + dy * r
-
+				# Keep within bounds
 				if not (0 <= nx < self.height and 0 <= ny < self.width):
-					vision.append((0, 0, 0))
-				else:
-					obj = self.grid[nx][ny]
-					if obj is None:
-						vision.append((1, 1, 1))
-					elif hasattr(obj, "color"):
-						vision.append(obj.color)
-					else:
-						vision.append((0, 0, 0))
+					vision.append([0, 0, 0, r / vision_range])
+					detected = True
+					break
 
-		return np.array(vision)
+				obj = self.grid[nx][ny]
+
+				if obj is not None:
+					# Object encoding
+					R, G, B = obj.color
+					vision.append([R, G, B, r / vision_range])
+					detected = True
+					break
+
+			if not detected:
+				# Nothing within range
+				vision.append([1, 1, 1, 1.0])
+
+		return np.array(vision).flatten()
 
 	def move_agent(self):
 
@@ -473,26 +470,60 @@ def grid_difference(g1, g2):
 
 def lyapunov_analysis(g1, g2, num_ticks=50, render=False, **grid_params):
 	"""
-	Estimate the maximal Lyapunov exponent via lockstep evolution.
+	Estimate the maximal finite-time Lyapunov exponent via lockstep evolution.
 
-	The two grids are evolved in strict lockstep per tick to ensure
-	dynamical comparability. At each tick, their continuous phase-space
-	distance is measured using `grid_difference`.
+	The two grids are evolved in strict lockstep per tick to preserve
+	dynamical comparability and maintain identical stochastic forcing
+	(RNG stream separation handled externally). At each tick, their
+	continuous phase-space distance d(t) is measured using `grid_difference`.
 
-	The exponent is estimated by fitting a linear slope to the early
-	linear-growth region of log(d(t)).
+	Methodology
+	-----------
+	The Lyapunov exponent λ is estimated from the exponential growth regime:
 
-	Conceptual distinction:
-	- Lyapunov exponent → continuous phase-space instability metric
-	- Shannon entropy → coarse-grained macroscopic classification
+		d(t) ≈ d0 * exp(λ t)
 
-	This function estimates microscopic dynamical sensitivity,
+	which implies:
+
+		log d(t) ≈ log d0 + λ t
+
+	A linear fit is applied only to the early-time exponential regime.
+	The cutoff is determined dynamically using a slope-collapse criterion:
+
+	1. Compute local slopes of log d(t)
+	2. Smooth slopes via moving average
+	3. Detect saturation when the slope falls below 50% of its initial value
+	4. Fit λ on the maximal pre-saturation interval
+
+	This avoids arbitrary truncation (e.g., fixed 30% window) and instead
+	identifies the exponential regime directly from the data.
+
+	Conceptual Notes
+	----------------
+	• The estimate is a finite-time Lyapunov exponent (FTLE),
+	  appropriate for bounded, discrete agent-based systems.
+
+	• Lyapunov exponent → microscopic phase-space instability metric
+	• Shannon entropy → coarse-grained macroscopic state classification
+
+	This function quantifies dynamical sensitivity to initial conditions,
 	not macroscopic disorder.
+
+	Parameters
+	----------
+	g1, g2 : Grid
+		Two nearly identical initial configurations.
+	num_ticks : int
+		Number of lockstep evolution steps.
+	render : bool
+		If True, renders initial and final states.
+	**grid_params :
+		Additional parameters (e.g., min_child_energy for entropy calculation).
 
 	Returns
 	-------
 	tuple of (float, list)
-		Estimated Lyapunov exponent and divergence trajectory.
+		Estimated finite-time Lyapunov exponent and divergence trajectory.
 	"""
 	diffs = []
 
@@ -523,11 +554,30 @@ def lyapunov_analysis(g1, g2, num_ticks=50, render=False, **grid_params):
 		g2.render()
 		print("Grid 2 - Final Shannon entropy:", shannon_entropy(g2, grid_params['min_child_energy']))
 
-	# fit slope in early linear region
 	log_diffs = np.log(diffs)
 
-	# use 30% region before saturation
-	cutoff = max(5, int(0.3 * len(log_diffs)))
+	# compute local slopes
+	slopes = np.diff(log_diffs)
+
+	# smooth slopes slightly (optional but recommended)
+	window = 5
+	smoothed = np.convolve(slopes, np.ones(window)/window, mode='valid')
+
+	# initial slope estimate
+	initial_slope = smoothed[0]
+
+	# detect saturation: when slope drops below 50% of initial slope
+	threshold = 0.5 * initial_slope
+
+	cutoff = len(smoothed)
+
+	for i, s in enumerate(smoothed):
+		if s < threshold:
+			cutoff = i + window  # adjust for convolution offset
+			break
+
+	# safety floor
+	cutoff = max(5, cutoff)
 
 	x = np.arange(cutoff)
 	y = log_diffs[:cutoff]
@@ -684,8 +734,29 @@ def main_simulation(num_ticks=50, num_perturbed_agents=1, seed=123, debug_render
 	print("----- END OF LYAPUNOV EXPONENT COMPARISON -----")
 
 
+"""
+near-critical ecological growth regime
+---
+This regime is intentionally slightly supercritical.
+Small perturbations alter early reproduction timing,
+which cascades via nonlinear reproduction and energy redistribution.
 
-# Main Execution
+This is desirable because:
+
+- Lyapunov exponent measures sensitivity to microscopic perturbations.
+- A marginal growth regime amplifies divergence.
+- Both random and NN agents operate under identical ecological constraints.
+
+Thus, the parameter set is chosen to:
+    • Avoid trivial extinction.
+    • Avoid immediate saturation.
+    • Maximize observable dynamical instability.
+    • Keep comparison between random and NN agents fair.
+
+The goal is dynamical comparability, not ecological realism.
+"""
+
+# near-critical ecological growth regime
 grid_params = {
 	"width": 50,
 	"height": 50,
