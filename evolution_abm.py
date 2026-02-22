@@ -351,38 +351,16 @@ class Grid:
 		plt.show()
 
 
-def set_seed(seed):
-	"""
-	Set the random seed across all relevant modules to ensure deterministic behavior.
-
-	Parameters
-	----------
-	seed : int
-		The seed value used to initialize Python's `random`, NumPy's random generator,
-		and environment hash functions for reproducible simulation results.
-	"""
-	random.seed(seed)
-	np.random.seed(seed)
-	os.environ['PYTHONHASHSEED'] = str(seed)
-
-
 def shannon_entropy(grid, energy_eps=6):
 	"""
 	Compute the coarse-grained Shannon entropy of the grid state.
 
 	This entropy is a macroscopic, discretized classification of the system.
 	Agents are grouped into categorical states based on sex and an energy
-	threshold (HighE / LowE). Food types, walls, and empty cells are also
-	classified discretely.
+	threshold (HighE / LowE). Food types, walls, and empty cells are classified discretely.
 
-	Interpretation
-	--------------
-	- Entropy → discretized macroscopic classification
-	- Lyapunov exponent → continuous phase-space metric
-
-	This means entropy measures structural diversity at a coarse ecological
-	level, while the Lyapunov exponent measures microscopic trajectory
-	sensitivity in continuous state space.
+	Shannon entropy measures the structural diversity at a coarse ecological level, while the Lyapunov 
+	exponent measures microscopic trajectory sensitivity in continuous state space.
 
 	The entropy is computed as:
 
@@ -428,7 +406,7 @@ def grid_difference(g1, g2):
 	- Sex mismatch contributes discretely.
 	- Entity type mismatch contributes discretely.
 
-	This is intentionally different from Shannon entropy:
+	This is intentionally different from Shannon entropy as:
 
 	- Lyapunov exponent → continuous phase-space metric
 	- Shannon entropy → discretized macroscopic classification
@@ -472,10 +450,9 @@ def lyapunov_analysis(g1, g2, num_ticks=50, render=False, **grid_params):
 	"""
 	Estimate the maximal finite-time Lyapunov exponent via lockstep evolution.
 
-	The two grids are evolved in strict lockstep per tick to preserve
-	dynamical comparability and maintain identical stochastic forcing
-	(RNG stream separation handled externally). At each tick, their
-	continuous phase-space distance d(t) is measured using `grid_difference`.
+	The two grids are evolved in strict lockstep per tick to preserve dynamical comparability and maintain 
+	identical stochastic forcing (RNG streams are handled internally by each grid). At each tick, their
+	continuous phase-space distance d(t) is measured and saved.
 
 	Methodology
 	-----------
@@ -502,11 +479,7 @@ def lyapunov_analysis(g1, g2, num_ticks=50, render=False, **grid_params):
 	----------------
 	• The estimate is a finite-time Lyapunov exponent (FTLE),
 	  appropriate for bounded, discrete agent-based systems.
-
-	• Lyapunov exponent → microscopic phase-space instability metric
-	• Shannon entropy → coarse-grained macroscopic state classification
-
-	This function quantifies dynamical sensitivity to initial conditions,
+	• This function quantifies dynamical sensitivity to initial conditions,
 	not macroscopic disorder.
 
 	Parameters
@@ -541,7 +514,6 @@ def lyapunov_analysis(g1, g2, num_ticks=50, render=False, **grid_params):
 		g1.move_agent()
 		g1.respawn_food()
 
-		# preserve RNG stream
 		g2.move_agent()
 		g2.respawn_food()
 
@@ -592,8 +564,8 @@ def compare_grids(num_ticks=50, num_perturbed_agents=1, seed=123, final_render=T
 	"""
 	Compare two nearly identical grid simulations to estimate the Lyapunov exponent.
 
-	A second grid is created as a deep copy of the first, with a small spatial
-	perturbation applied to it. Both simulations are then evolved and
+	A second grid is created with the same grid parameters as teh first one, with a 
+	small structural perturbation applied to it. Both simulations are then evolved and
 	compared over time to measure the divergence.
 
 	Parameters
@@ -613,7 +585,6 @@ def compare_grids(num_ticks=50, num_perturbed_agents=1, seed=123, final_render=T
 	lambdas = []
 
 	for trial in range(num_trials):
-		#set_seed(seed + trial)
 		g1 = Grid(**grid_params, seed=seed + trial)
 		g2 = Grid(**grid_params, seed=seed + trial)
 
@@ -653,7 +624,6 @@ def check_determinism(num_ticks, seed, debug_render=False, final_render=True, **
 	"""
 	print("----- DETERMINISTIC CHECK -----")
 
-	#set_seed(seed)
 	g1 = Grid(**grid_params, seed=seed)
 	g2 = Grid(**grid_params, seed=seed)
 
@@ -664,17 +634,9 @@ def check_determinism(num_ticks, seed, debug_render=False, final_render=True, **
 		print("Grid 2 - Initial Shannon entropy:", shannon_entropy(g2, grid_params['min_child_energy']))
 
 	for t in range(num_ticks):
-		# preserve RNG stream
-		state_np = np.random.get_state()
-		state_py = random.getstate()
-
 		g1.move_agent()
 		g1.respawn_food()
 
-		np.random.set_state(state_np)
-		random.setstate(state_py)
-
-		# preserve RNG stream
 		g2.move_agent()
 		g2.respawn_food()
 		
@@ -734,37 +696,81 @@ def main_simulation(num_ticks=50, num_perturbed_agents=1, seed=123, debug_render
 	print("----- END OF LYAPUNOV EXPONENT COMPARISON -----")
 
 
+
 """
-near-critical ecological growth regime
----
-This regime is intentionally slightly supercritical.
-Small perturbations alter early reproduction timing,
+Slightly subcritical ecological growth regime.
+--- ---
+
+This regime is intentionally positioned slightly below the critical reproductive threshold - due to relatively 
+high reproduction costs and a reduced food respawn rate.
+
+Random-movement agents are therefore less prone to saturate the grid, which promotes a resource-scavenging 
+exploration dynamic rather than rapid reproductive expansion.
+
+Reducing mating frequency lowers the density of agent to agent interactions. This decreases the rate of selection 
+pressure and therefore limits the developmental advantage of artificial neural network control policies.
+
+Parameter set characteristics:
+    • Avoid trivial extinction.
+    • Make immediate saturation unlikely.
+    • Promote resource-driven exploration dynamics.
+"""
+
+# slightly subcritical ecological growth regime
+grid_params = {
+	"width": 100,
+	"height": 100,
+	"metabolic_cost":0.9,
+	"min_child_energy": 7,
+	"reproduction_cost": 9,
+	"food_respawn_rate": 0.01,
+	"num_agents": 40,
+	"num_apples": 40,
+	"num_oranges": 30,
+	"num_walls": 60,
+	"use_nn": False
+}
+
+main_simulation(
+	num_ticks=1000,
+	num_perturbed_agents=1,
+	seed=123,
+	debug_render=False, 
+	final_render=True, 
+	lyapunov_final_render=True, 
+	num_trials=1,
+	**grid_params
+)
+
+
+"""
+Near-critical ecological growth regime.
+--- ---
+This regime is intentionally near-critical. Small perturbations alter early reproduction timing, 
 which cascades via nonlinear reproduction and energy redistribution.
 
-This is desirable because:
-
-- Lyapunov exponent measures sensitivity to microscopic perturbations.
-- A marginal growth regime amplifies divergence.
-- Both random and NN agents operate under identical ecological constraints.
-
-Thus, the parameter set is chosen to:
+Parameter set characteristics:
     • Avoid trivial extinction.
     • Avoid immediate saturation.
     • Maximize observable dynamical instability.
-    • Keep comparison between random and NN agents fair.
+
+This is desirable because:
+- Lyapunov exponent measures sensitivity to microscopic perturbations.
+- A marginal growth regime amplifies divergence.
+- Both random and NN agents operate under identical ecological constraints.
 
 The goal is dynamical comparability, not ecological realism.
 """
 
 # near-critical ecological growth regime
 grid_params = {
-	"width": 50,
-	"height": 50,
+	"width": 100,
+	"height": 100,
 	"metabolic_cost":0.9,
 	"min_child_energy": 7,
-	"reproduction_cost": 5,
-	"food_respawn_rate": 0.02,
-	"num_agents": 20,
+	"reproduction_cost": 8,
+	"food_respawn_rate": 0.014,
+	"num_agents": 40,
 	"num_apples": 40,
 	"num_oranges": 30,
 	"num_walls": 60,
