@@ -19,6 +19,11 @@ class Agent:
 		self.color = color
 		self.energy = energy
 
+	def nn_output_to_move(self):
+		logits = self.nn.forward(self.vision)
+		idx = int(np.argmax(logits))
+		return directions[idx]
+
 class Food:
 	def __init__(self, x, y, color, energy):
 		self.x = x
@@ -40,6 +45,52 @@ class Wall:
 		self.y = y
 		self.color = color
 
+class SimpleNN:
+	def __init__(self, rng, input_size=32, hidden_size=16, output_size=8, activation="tanh", mutation_std=0.05):
+
+		self.activation_name = activation
+		self.mutation_std = mutation_std
+		self.rng = rng  # local RNG
+
+		# Xavier-style initialization
+		limit1 = 1 / math.sqrt(input_size)
+		limit2 = 1 / math.sqrt(hidden_size)
+
+		self.W1 = np.array([[rng.uniform(-limit1, limit1)
+		                     for _ in range(input_size)]
+		                    for _ in range(hidden_size)])
+
+		self.b1 = np.zeros(hidden_size)
+
+		self.W2 = np.array([[rng.uniform(-limit2, limit2)
+		                     for _ in range(hidden_size)]
+		                    for _ in range(output_size)])
+
+		self.b2 = np.zeros(output_size)
+
+	def activation(self, x):
+		if self.activation_name == "tanh":
+			return np.tanh(x)
+		elif self.activation_name == "sigmoid":
+			return 1 / (1 + np.exp(-x))
+		else:
+			raise ValueError("Unsupported activation.")
+
+	def forward(self, x):
+		h = self.activation(self.W1 @ x + self.b1)
+		out = self.W2 @ h + self.b2
+		return out  # raw logits
+
+	def mutate(self):
+		def mutate_matrix(M):
+			for i in range(M.shape[0]):
+				for j in range(M.shape[1]):
+					if self.rng.random() < 0.1:
+						M[i, j] += self.rng.gauss(0, self.mutation_std)
+
+		mutate_matrix(self.W1)
+		mutate_matrix(self.W2)
+
 class Grid:
 	def __init__(self, width, height, metabolic_cost, min_child_energy, reproduction_cost, food_respawn_rate,
 	num_agents, num_apples, num_oranges, num_walls=30, use_nn=False, seed=123):
@@ -57,6 +108,22 @@ class Grid:
 		self.rng = random.Random(seed)
 
 		self.populate(num_agents, num_apples, num_oranges, num_walls)
+
+	def cross_mutate(self, nn1, nn2):
+		child = copy.deepcopy(nn1)
+
+		for attr in ["W1", "W2"]:
+			parent_matrix = getattr(nn2, attr)
+			child_matrix = getattr(child, attr)
+
+			mask = np.array([[self.rng.random() < 0.5
+							for _ in range(child_matrix.shape[1])]
+							for _ in range(child_matrix.shape[0])])
+
+			child_matrix[mask] = parent_matrix[mask]
+
+		child.mutate()
+		return child
 
 	def get_empty_positions(self):
 		return [(i, j) for i in range(self.height) for j in range(self.width) if self.grid[i][j] is None]
@@ -108,9 +175,9 @@ class Grid:
 			color = (0, 0, 1) if sex == 0 else (0, 0, 0.5)
 			agent = Agent(x, y, sex, color)
 
-			# Placeholder for NN
+			# Artificial NN use
 			if self.use_nn:
-				agent.nn = initialize_new_nn()
+				agent.nn = SimpleNN(self.rng)
 
 			self.place_object(agent)
 			self.agents.append(agent)
@@ -191,9 +258,9 @@ class Grid:
 			color = (0, 0, 1) if sex == 0 else (0, 0, 0.5)
 			child = Agent(x, y, sex, color, energy=energy_per_child)
 
-			# Placeholder for NN
+			# Artificial NN use
 			if self.use_nn:
-				child.nn = cross_mutate(agent1.nn, agent2.nn)
+				child.nn = self.cross_mutate(agent1.nn, agent2.nn)
 
 			self.place_object(child)
 			self.agents.append(child)
@@ -262,13 +329,11 @@ class Grid:
 				self.agents.remove(agent)
 				continue
 
-			# Placeholder for NN
+			# Artificial NN use
 			if self.use_nn:
 				vision = self.get_agent_vision(agent)
 				agent.vision = vision
-
 				dx, dy = agent.nn_output_to_move()
-				pass
 			else:
 				# Random movement (default behavior)
 				dx, dy = self.rng.choice(directions)
@@ -637,9 +702,13 @@ def check_determinism(num_ticks, seed, debug_render=False, final_render=True, **
 		g1.move_agent()
 		g1.respawn_food()
 
+		if debug_render == True:
+			g1.render()
+			g2.render()
+
 		g2.move_agent()
 		g2.respawn_food()
-		
+
 	if final_render == True:
 		g1.render()
 		print("Grid 1 - Final Shannon entropy:", shannon_entropy(g1, grid_params['min_child_energy']))
@@ -691,8 +760,8 @@ def main_simulation(num_ticks=50, num_perturbed_agents=1, seed=123, debug_render
 		raise RuntimeError("Simulation environment is non-deterministic.")
 
 	print("----- LYAPUNOV EXPONENT COMPARISON -----")
-	lyap = compare_grids(num_ticks, num_perturbed_agents, seed, final_render, lyapunov_final_render, num_trials, **grid_params)
-	print("Estimated Lyapunov exponent:", lyap)
+	# lyap = compare_grids(num_ticks, num_perturbed_agents, seed, final_render, lyapunov_final_render, num_trials, **grid_params)
+	# print("Estimated Lyapunov exponent:", lyap)
 	print("----- END OF LYAPUNOV EXPONENT COMPARISON -----")
 
 
@@ -716,31 +785,31 @@ Parameter set characteristics:
     • Promote resource-driven exploration dynamics.
 """
 
-# slightly subcritical ecological growth regime
-grid_params = {
-	"width": 100,
-	"height": 100,
-	"metabolic_cost":0.9,
-	"min_child_energy": 7,
-	"reproduction_cost": 9,
-	"food_respawn_rate": 0.01,
-	"num_agents": 40,
-	"num_apples": 40,
-	"num_oranges": 30,
-	"num_walls": 60,
-	"use_nn": False
-}
+# # slightly subcritical ecological growth regime
+# grid_params = {
+# 	"width": 100,
+# 	"height": 100,
+# 	"metabolic_cost":0.9,
+# 	"min_child_energy": 7,
+# 	"reproduction_cost": 9,
+# 	"food_respawn_rate": 0.01,
+# 	"num_agents": 40,
+# 	"num_apples": 40,
+# 	"num_oranges": 30,
+# 	"num_walls": 60,
+# 	"use_nn": False
+# }
 
-main_simulation(
-	num_ticks=1000,
-	num_perturbed_agents=1,
-	seed=123,
-	debug_render=False, 
-	final_render=True, 
-	lyapunov_final_render=True, 
-	num_trials=1,
-	**grid_params
-)
+# main_simulation(
+# 	num_ticks=1000,
+# 	num_perturbed_agents=1,
+# 	seed=123,
+# 	debug_render=False, 
+# 	final_render=True, 
+# 	lyapunov_final_render=True, 
+# 	num_trials=1,
+# 	**grid_params
+# )
 
 
 """
@@ -770,15 +839,15 @@ grid_params = {
 	"min_child_energy": 7,
 	"reproduction_cost": 8,
 	"food_respawn_rate": 0.014,
-	"num_agents": 40,
+	"num_agents": 400,
 	"num_apples": 40,
 	"num_oranges": 30,
 	"num_walls": 60,
-	"use_nn": False
+	"use_nn": True
 }
 
 main_simulation(
-	num_ticks=1000,
+	num_ticks=100,
 	num_perturbed_agents=1,
 	seed=123,
 	debug_render=False, 
