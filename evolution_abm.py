@@ -52,7 +52,7 @@ class SimpleNN:
 		self.mutation_std = mutation_std
 		self.rng = rng  # local RNG
 
-		# Xavier-style initialization
+		# xavier-style initialization
 		limit1 = 1 / math.sqrt(input_size)
 		limit2 = 1 / math.sqrt(hidden_size)
 
@@ -175,7 +175,7 @@ class Grid:
 			color = (0, 0, 1) if sex == 0 else (0, 0, 0.5)
 			agent = Agent(x, y, sex, color)
 
-			# Artificial NN use
+			# artificial NN use
 			if self.use_nn:
 				agent.nn = SimpleNN(self.rng)
 
@@ -201,7 +201,7 @@ class Grid:
 		if agent1 not in self.agents or agent2 not in self.agents:
 			return
 
-		# Fighting scenario
+		# fighting scenario
 		if agent1.sex == agent2.sex:
 			if agent1.energy > agent2.energy:
 				winner, loser = agent1, agent2
@@ -215,7 +215,7 @@ class Grid:
 			self.agents.remove(loser)
 			return
 
-		# Mating scenario
+		# mating scenario
 		total_energy = agent1.energy + agent2.energy
 
 		min_child_energy = self.min_child_energy
@@ -229,7 +229,7 @@ class Grid:
 		if max_children == 0:
 			return
 
-		# Center around mid-point between parents
+		# center around mid-point between parents
 		cx = (agent1.x + agent2.x) // 2
 		cy = (agent1.y + agent2.y) // 2
 
@@ -258,14 +258,14 @@ class Grid:
 			color = (0, 0, 1) if sex == 0 else (0, 0, 0.5)
 			child = Agent(x, y, sex, color, energy=energy_per_child)
 
-			# Artificial NN use
+			# artificial NN use
 			if self.use_nn:
 				child.nn = self.cross_mutate(agent1.nn, agent2.nn)
 
 			self.place_object(child)
 			self.agents.append(child)
 
-		# Remove parents
+		# remove parents
 		for parent in [agent1, agent2]:
 			self.remove_object(parent)
 			self.agents.remove(parent)
@@ -293,7 +293,7 @@ class Grid:
 				nx = agent.x + dx * r
 				ny = agent.y + dy * r
 
-				# Keep within bounds
+				# keep within bounds
 				if not (0 <= nx < self.height and 0 <= ny < self.width):
 					vision.append([0, 0, 0, r / vision_range])
 					detected = True
@@ -302,14 +302,14 @@ class Grid:
 				obj = self.grid[nx][ny]
 
 				if obj is not None:
-					# Object encoding
+					# object encoding
 					R, G, B = obj.color
 					vision.append([R, G, B, r / vision_range])
 					detected = True
 					break
 
 			if not detected:
-				# Nothing within range
+				# detected nothing within range
 				vision.append([1, 1, 1, 1.0])
 
 		return np.array(vision).flatten()
@@ -322,49 +322,49 @@ class Grid:
 			if agent not in self.agents:
 				return
 
-			# Decay mechanism
+			# decay mechanism
 			agent.energy -= self.metabolic_cost
 			if agent.energy <= 0:
 				self.remove_object(agent)
 				self.agents.remove(agent)
 				continue
 
-			# Artificial NN use
+			# artificial NN use
 			if self.use_nn:
 				vision = self.get_agent_vision(agent)
 				agent.vision = vision
 				dx, dy = agent.nn_output_to_move()
 			else:
-				# Random movement (default behavior)
+				# random movement (default behavior)
 				dx, dy = self.rng.choice(directions)
 
 			nx, ny = agent.x + dx, agent.y + dy
 
-			# Check bounds
+			# check bounds
 			if not (0 <= nx < self.height and 0 <= ny < self.width):
 				continue
 
-			# Blocked by wall
+			# blocked by wall
 			if isinstance(self.grid[nx][ny], Wall):
 				continue
 
 			target = self.grid[nx][ny]
 
-			# Eat food
+			# eat food
 			if isinstance(target, Food):
 				agent.energy += target.energy
 				self.food_items.remove(target)
 				self.remove_object(target)
 
-			# Meet with another agent
+			# meet with another agent
 			elif isinstance(target, Agent):
 				self.meet(agent, target)
 
-			# Check if agent is still alive
+			# check if agent is still alive
 			if agent not in self.agents:
 				continue
 
-			# Move agent
+			# move agent
 			self.remove_object(agent)
 			agent.x, agent.y = nx, ny
 			self.place_object(agent)
@@ -610,7 +610,7 @@ def lyapunov_analysis(g1, g2, num_ticks=50, render=False, **grid_params):
 
 	for i, s in enumerate(smoothed):
 		if s < threshold:
-			cutoff = i + window  # adjust for convolution offset
+			cutoff = i + window  # convolution offset
 			break
 
 	# safety floor
@@ -731,6 +731,99 @@ def check_determinism(num_ticks, seed, debug_render=False, final_render=True, **
 	return True
 
 
+def measure_regime_stability(grid_params, num_ticks=500, burn_frac=0.3, seed=123):
+	"""
+	Regime stability measurement.
+
+	Returns:
+		{
+			"r": log-growth rate,
+			"cv": coefficient of variation,
+			"survived": bool,
+			"final_population": int
+		}
+	"""
+
+	g = Grid(**grid_params, seed=seed)
+
+	pop_history = []
+
+	for t in range(num_ticks):
+		g.move_agent()
+		g.respawn_food()
+		pop_history.append(len(g.agents))
+
+	pop_history = np.array(pop_history)
+
+	# survival
+	survived = pop_history[-1] > 0
+
+	# survival
+	survived = pop_history[-1] > 0
+
+	# avoid log(0)
+	pop_history_safe = np.maximum(pop_history, 1)
+
+	# discard burn-in
+	start = int(burn_frac * num_ticks)
+	t_vals = np.arange(start, num_ticks)
+
+	logN = np.log(pop_history_safe[start:])
+
+	# linear fit for growth rate
+	if len(logN) > 5:
+		r, _ = np.polyfit(t_vals, logN, 1)
+	else:
+		r = float("nan")
+
+	# coefficient of variation
+	meanN = np.mean(pop_history[start:])
+	stdN = np.std(pop_history[start:])
+	cv = stdN / meanN if meanN > 0 else float("inf")
+
+	return {
+		"r": r,
+		"cv": cv,
+		"survived": survived,
+		"final_population": int(pop_history[-1])
+	}
+
+
+def regime_statistics(grid_params, num_runs=20, num_ticks=500, burn_frac=0.3, seed=123):
+	"""
+	Run multiple trials and aggregate stability metrics.
+	"""
+
+	results = []
+
+	for i in range(num_runs):
+		res = measure_regime_stability(
+			grid_params,
+			num_ticks=num_ticks,
+			burn_frac=burn_frac,
+			seed=seed + i
+		)
+		results.append(res)
+
+	r_vals = np.array([r["r"] for r in results])
+	cv_vals = np.array([r["cv"] for r in results])
+	survival_rate = np.mean([r["survived"] for r in results])
+
+	print("----- REGIME STABILITY -----")
+	print(f"Mean log-growth rate r: {np.mean(r_vals):.6f}")
+	print(f"Std of r: {np.std(r_vals):.6f}")
+	print(f"Mean CV: {np.mean(cv_vals):.6f}")
+	print(f"Survival probability: {survival_rate:.3f}")
+	print("----------------------------")
+
+	return {
+		"mean_r": np.mean(r_vals),
+		"std_r": np.std(r_vals),
+		"mean_cv": np.mean(cv_vals),
+		"survival_prob": survival_rate
+	}
+
+
 def main_simulation(num_ticks=50, num_perturbed_agents=1, seed=123, debug_render=False, final_render=True, lyapunov_final_render=True, num_trials=30, **grid_params):
 	"""
 	Execute the main experiment pipeline.
@@ -760,60 +853,17 @@ def main_simulation(num_ticks=50, num_perturbed_agents=1, seed=123, debug_render
 		raise RuntimeError("Simulation environment is non-deterministic.")
 
 	print("----- LYAPUNOV EXPONENT COMPARISON -----")
-	# lyap = compare_grids(num_ticks, num_perturbed_agents, seed, final_render, lyapunov_final_render, num_trials, **grid_params)
-	# print("Estimated Lyapunov exponent:", lyap)
+	lyap = compare_grids(num_ticks, num_perturbed_agents, seed, final_render, lyapunov_final_render, num_trials, **grid_params)
+	print("Estimated Lyapunov exponent:", lyap)
 	print("----- END OF LYAPUNOV EXPONENT COMPARISON -----")
 
 
 
-"""
-Slightly subcritical ecological growth regime.
---- ---
-
-This regime is intentionally positioned slightly below the critical reproductive threshold - due to relatively 
-high reproduction costs and a reduced food respawn rate.
-
-Random-movement agents are therefore less prone to saturate the grid, which promotes a resource-scavenging 
-exploration dynamic rather than rapid reproductive expansion.
-
-Reducing mating frequency lowers the density of agent to agent interactions. This decreases the rate of selection 
-pressure and therefore limits the developmental advantage of artificial neural network control policies.
-
-Parameter set characteristics:
-    • Avoid trivial extinction.
-    • Make immediate saturation unlikely.
-    • Promote resource-driven exploration dynamics.
-"""
-
-# # slightly subcritical ecological growth regime
-# grid_params = {
-# 	"width": 100,
-# 	"height": 100,
-# 	"metabolic_cost":0.9,
-# 	"min_child_energy": 7,
-# 	"reproduction_cost": 9,
-# 	"food_respawn_rate": 0.01,
-# 	"num_agents": 40,
-# 	"num_apples": 40,
-# 	"num_oranges": 30,
-# 	"num_walls": 60,
-# 	"use_nn": False
-# }
-
-# main_simulation(
-# 	num_ticks=1000,
-# 	num_perturbed_agents=1,
-# 	seed=123,
-# 	debug_render=False, 
-# 	final_render=True, 
-# 	lyapunov_final_render=True, 
-# 	num_trials=1,
-# 	**grid_params
-# )
-
+num_runs=10
+num_ticks=500
 
 """
-Near-critical ecological growth regime.
+Near-critical ecological growth regime - Random Driven Agents.
 --- ---
 This regime is intentionally near-critical. Small perturbations alter early reproduction timing, 
 which cascades via nonlinear reproduction and energy redistribution.
@@ -831,7 +881,7 @@ This is desirable because:
 The goal is dynamical comparability, not ecological realism.
 """
 
-# near-critical ecological growth regime
+# near-critical ecological growth regime - random agents
 grid_params = {
 	"width": 100,
 	"height": 100,
@@ -839,20 +889,70 @@ grid_params = {
 	"min_child_energy": 7,
 	"reproduction_cost": 8,
 	"food_respawn_rate": 0.014,
-	"num_agents": 400,
+	"num_agents": 50,
 	"num_apples": 40,
 	"num_oranges": 30,
 	"num_walls": 60,
-	"use_nn": True
+	"use_nn": False
 }
 
+regime_statistics(
+	grid_params=grid_params,
+	num_runs=num_runs,
+	num_ticks=num_ticks
+)
+
 main_simulation(
-	num_ticks=100,
+	num_ticks=num_ticks,
 	num_perturbed_agents=1,
 	seed=123,
 	debug_render=False, 
 	final_render=True, 
 	lyapunov_final_render=True, 
-	num_trials=1,
+	num_trials=num_runs,
+	**grid_params
+)
+
+"""
+Near-critical ecological growth regime - ANN Driven Agents.
+--- ---
+This regime is intentionally near-critical. Small perturbations alter early reproduction timing, 
+which cascades via nonlinear reproduction and energy redistribution.
+
+Parameter set characteristics:
+    • Avoid trivial extinction.
+    • Avoid immediate saturation.
+    • Maximize observable dynamical instability.
+"""
+
+# near-critical ecological growth regime - nn agents
+grid_params = {
+	"width": 100,
+	"height": 100,
+	"metabolic_cost":0.9,
+	"min_child_energy": 7,
+	"reproduction_cost": 8,
+	"food_respawn_rate": 0.014,
+	"num_agents": 50,
+	"num_apples": 500,
+	"num_oranges": 500,
+	"num_walls": 60,
+	"use_nn": True
+}
+
+regime_statistics(
+	grid_params=grid_params,
+	num_runs=num_runs,
+	num_ticks=num_ticks
+)
+
+main_simulation(
+	num_ticks=num_ticks,
+	num_perturbed_agents=1,
+	seed=123,
+	debug_render=False,
+	final_render=True,
+	lyapunov_final_render=True,
+	num_trials=num_runs,
 	**grid_params
 )
