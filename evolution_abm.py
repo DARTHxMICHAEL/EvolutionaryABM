@@ -733,15 +733,32 @@ def check_determinism(num_ticks, seed, debug_render=False, final_render=True, **
 
 def measure_regime_stability(grid_params, num_ticks=500, burn_frac=0.3, seed=123):
 	"""
-	Regime stability measurement.
+	Run a single simulation and compute basic regime stability metrics.
 
-	Returns:
-		{
-			"r": log-growth rate,
-			"cv": coefficient of variation,
-			"survived": bool,
-			"final_population": int
-		}
+	Parameters
+	----------
+	grid_params : dict
+		Parameters passed to Grid constructor.
+	num_ticks : int
+		Total simulation steps.
+	burn_frac : float
+		Fraction of initial steps discarded before statistics.
+	seed : int
+		Random seed for this run.
+
+	Returns
+	-------
+	dict with:
+		"r" : float
+			Estimated mean log-population growth rate.
+		"cv" : float
+			Coefficient of variation of population size.
+		"survived" : bool
+			Whether population > 0 at final step.
+		"population_preserved" : bool
+			Whether final population >= initial population.
+		"final_population" : int
+			Population size at final step.
 	"""
 
 	g = Grid(**grid_params, seed=seed)
@@ -755,28 +772,21 @@ def measure_regime_stability(grid_params, num_ticks=500, burn_frac=0.3, seed=123
 
 	pop_history = np.array(pop_history)
 
-	# survival
 	survived = pop_history[-1] > 0
+	population_preserved = pop_history[-1] >= grid_params['num_agents']
 
-	# survival
-	survived = pop_history[-1] > 0
-
-	# avoid log(0)
 	pop_history_safe = np.maximum(pop_history, 1)
 
-	# discard burn-in
 	start = int(burn_frac * num_ticks)
 	t_vals = np.arange(start, num_ticks)
 
 	logN = np.log(pop_history_safe[start:])
 
-	# linear fit for growth rate
 	if len(logN) > 5:
 		r, _ = np.polyfit(t_vals, logN, 1)
 	else:
 		r = float("nan")
 
-	# coefficient of variation
 	meanN = np.mean(pop_history[start:])
 	stdN = np.std(pop_history[start:])
 	cv = stdN / meanN if meanN > 0 else float("inf")
@@ -785,13 +795,23 @@ def measure_regime_stability(grid_params, num_ticks=500, burn_frac=0.3, seed=123
 		"r": r,
 		"cv": cv,
 		"survived": survived,
+		"population_preserved": population_preserved,
 		"final_population": int(pop_history[-1])
 	}
 
 
 def regime_statistics(grid_params, num_runs=20, num_ticks=500, burn_frac=0.3, seed=123):
 	"""
-	Run multiple trials and aggregate stability metrics.
+	Run multiple simulations and aggregate regime stability statistics.
+
+	Returns
+	-------
+	dict with:
+		"mean_log_growth_rate"
+		"std_log_growth_rate"
+		"mean_coefficient_of_variation"
+		"survival_probability"
+		"population_preservation_probability"
 	"""
 
 	results = []
@@ -808,19 +828,26 @@ def regime_statistics(grid_params, num_runs=20, num_ticks=500, burn_frac=0.3, se
 	r_vals = np.array([r["r"] for r in results])
 	cv_vals = np.array([r["cv"] for r in results])
 	survival_rate = np.mean([r["survived"] for r in results])
+	preservation_rate = np.mean([r["population_preserved"] for r in results])
 
-	print("----- REGIME STABILITY -----")
-	print(f"Mean log-growth rate r: {np.mean(r_vals):.6f}")
-	print(f"Std of r: {np.std(r_vals):.6f}")
-	print(f"Mean CV: {np.mean(cv_vals):.6f}")
+	mean_r = np.mean(r_vals)
+	std_r = np.std(r_vals)
+	mean_cv = np.mean(cv_vals)
+
+	print("----- REGIME STABILITY SUMMARY -----")
+	print(f"Mean log population growth rate: {mean_r:.6f}")
+	print(f"Standard deviation of log growth rate: {std_r:.6f}")
+	print(f"Mean coefficient of variation: {mean_cv:.6f}")
 	print(f"Survival probability: {survival_rate:.3f}")
-	print("----------------------------")
+	print(f"Population preservation probability: {preservation_rate:.3f}")
+	print("------------------------------------")
 
 	return {
-		"mean_r": np.mean(r_vals),
-		"std_r": np.std(r_vals),
-		"mean_cv": np.mean(cv_vals),
-		"survival_prob": survival_rate
+		"mean_log_growth_rate": mean_r,
+		"std_log_growth_rate": std_r,
+		"mean_coefficient_of_variation": mean_cv,
+		"survival_probability": survival_rate,
+		"population_preservation_probability": preservation_rate
 	}
 
 
