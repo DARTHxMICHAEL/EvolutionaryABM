@@ -978,3 +978,84 @@ main_simulation(
 	num_trials=num_runs,
 	**grid_params
 )
+
+
+"""
+Identical ecological constraints scenario.
+--- ---
+In this block both agent types operate under exactly the same
+resource density, initial population size and environmental structure.
+
+Purpose:
+- Remove regime calibration as a confounding factor.
+- Isolate the effect of decision mechanism alone.
+- Observe whether NN agents shift the effective dynamical phase
+  under identical ecological pressure.
+  
+This is not regime-matched.
+This is mechanism-under-identical-constraints.
+"""
+
+# identical ecological constraints - random agents
+grid_params = {
+	"width": 100,
+	"height": 100,
+	"metabolic_cost":0.9,
+	"min_child_energy": 7,
+	"reproduction_cost": 8,
+	"food_respawn_rate": 0.012,
+	"num_agents": 80,
+	"num_apples": 800,
+	"num_oranges": 800,
+	"num_walls": 60,
+	"use_nn": False
+}
+
+regime_statistics(
+	grid_params=grid_params,
+	num_runs=num_runs,
+	num_ticks=num_ticks
+)
+
+main_simulation(
+	num_ticks=num_ticks,
+	num_perturbed_agents=1,
+	seed=123,
+	debug_render=False,
+	final_render=True,
+	lyapunov_final_render=True,
+	num_trials=num_runs,
+	**grid_params
+)
+
+# identical ecological constraints - nn agents
+grid_params = {
+	"width": 100,
+	"height": 100,
+	"metabolic_cost":0.9,
+	"min_child_energy": 7,
+	"reproduction_cost": 8,
+	"food_respawn_rate": 0.012,
+	"num_agents": 80,
+	"num_apples": 800,
+	"num_oranges": 800,
+	"num_walls": 60,
+	"use_nn": True
+}
+
+regime_statistics(
+	grid_params=grid_params,
+	num_runs=num_runs,
+	num_ticks=num_ticks
+)
+
+main_simulation(
+	num_ticks=num_ticks,
+	num_perturbed_agents=1,
+	seed=123,
+	debug_render=False,
+	final_render=True,
+	lyapunov_final_render=True,
+	num_trials=num_runs,
+	**grid_params
+)
