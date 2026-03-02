@@ -753,8 +753,8 @@ def measure_regime_stability(grid_params, num_ticks=500, burn_frac=0.3, seed=123
 			Estimated mean log-population growth rate.
 		"cv" : float
 			Coefficient of variation of population size.
-		"survived" : bool
-			Whether population > 0 at final step.
+		"viable" : bool
+			Whether population is able to reproduce.
 		"population_preserved" : bool
 			Whether final population >= initial population.
 		"final_population" : int
@@ -772,7 +772,11 @@ def measure_regime_stability(grid_params, num_ticks=500, burn_frac=0.3, seed=123
 
 	pop_history = np.array(pop_history)
 
-	survived = pop_history[-1] > 0
+	if pop_history[-1] == 0:
+		viable = 0
+	else:
+		viable = any(a.sex == 1 for a in g.agents) and any(a.sex == 0 for a in g.agents)
+
 	population_preserved = pop_history[-1] >= grid_params['num_agents']
 
 	pop_history_safe = np.maximum(pop_history, 1)
@@ -794,7 +798,7 @@ def measure_regime_stability(grid_params, num_ticks=500, burn_frac=0.3, seed=123
 	return {
 		"r": r,
 		"cv": cv,
-		"survived": survived,
+		"viable": viable,
 		"population_preserved": population_preserved,
 		"final_population": int(pop_history[-1])
 	}
@@ -827,7 +831,7 @@ def regime_statistics(grid_params, num_runs=20, num_ticks=500, burn_frac=0.3, se
 
 	r_vals = np.array([r["r"] for r in results])
 	cv_vals = np.array([r["cv"] for r in results])
-	survival_rate = np.mean([r["survived"] for r in results])
+	viability_rate = np.mean([r["viable"] for r in results])
 	preservation_rate = np.mean([r["population_preserved"] for r in results])
 
 	mean_r = np.mean(r_vals)
@@ -838,17 +842,9 @@ def regime_statistics(grid_params, num_runs=20, num_ticks=500, burn_frac=0.3, se
 	print(f"Mean log population growth rate: {mean_r:.6f}")
 	print(f"Standard deviation of log growth rate: {std_r:.6f}")
 	print(f"Mean coefficient of variation: {mean_cv:.6f}")
-	print(f"Survival probability: {survival_rate:.3f}")
+	print(f"Viability preservation probability: {viability_rate:.3f}")
 	print(f"Population preservation probability: {preservation_rate:.3f}")
 	print("------------------------------------")
-
-	return {
-		"mean_log_growth_rate": mean_r,
-		"std_log_growth_rate": std_r,
-		"mean_coefficient_of_variation": mean_cv,
-		"survival_probability": survival_rate,
-		"population_preservation_probability": preservation_rate
-	}
 
 
 def main_simulation(num_ticks=50, num_perturbed_agents=1, seed=123, debug_render=False, final_render=True, lyapunov_final_render=True, num_trials=30, **grid_params):
@@ -886,7 +882,7 @@ def main_simulation(num_ticks=50, num_perturbed_agents=1, seed=123, debug_render
 
 
 
-num_runs=10
+num_runs=20
 num_ticks=500
 
 """
@@ -895,15 +891,14 @@ Near-critical ecological growth regime - Random Driven Agents.
 This regime is intentionally near-critical. Small perturbations alter early reproduction timing, 
 which cascades via nonlinear reproduction and energy redistribution.
 
+- Lyapunov exponent measures sensitivity to microscopic perturbations.
+- A marginal growth regime amplifies divergence.
+- Both agent types are tuned to operate in comparable fluctuation-dominated ecological regimes.
+
 Parameter set characteristics:
     • Avoid trivial extinction.
     • Avoid immediate saturation.
     • Maximize observable dynamical instability.
-
-This is desirable because:
-- Lyapunov exponent measures sensitivity to microscopic perturbations.
-- A marginal growth regime amplifies divergence.
-- Both random and NN agents operate under identical ecological constraints.
 
 The goal is dynamical comparability, not ecological realism.
 """
@@ -915,8 +910,8 @@ grid_params = {
 	"metabolic_cost":0.9,
 	"min_child_energy": 7,
 	"reproduction_cost": 8,
-	"food_respawn_rate": 0.014,
-	"num_agents": 50,
+	"food_respawn_rate": 0.012,
+	"num_agents": 30,
 	"num_apples": 40,
 	"num_oranges": 30,
 	"num_walls": 60,
@@ -959,10 +954,10 @@ grid_params = {
 	"metabolic_cost":0.9,
 	"min_child_energy": 7,
 	"reproduction_cost": 8,
-	"food_respawn_rate": 0.014,
-	"num_agents": 50,
-	"num_apples": 500,
-	"num_oranges": 500,
+	"food_respawn_rate": 0.012,
+	"num_agents": 80,
+	"num_apples": 800,
+	"num_oranges": 800,
 	"num_walls": 60,
 	"use_nn": True
 }
