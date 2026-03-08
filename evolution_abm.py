@@ -808,14 +808,63 @@ def regime_statistics(grid_params, num_runs=20, num_ticks=500, burn_frac=0.3, se
 	"""
 	Run multiple simulations and aggregate regime stability statistics.
 
+	This function evaluates whether the chosen ecological parameter set
+	produces a dynamically stable and non-trivial regime. In agent-based
+	ecological models, certain parameter combinations can lead to trivial
+	outcomes such as immediate population extinction or uncontrolled
+	population explosion. Such regimes are unsuitable for dynamical
+	analysis, particularly when estimating quantities such as Lyapunov
+	exponents or entropy-based structural measures.
+
+	To assess regime stability, the simulation is executed multiple times
+	with different random seeds. Each run produces summary metrics
+	describing the long-term population dynamics after discarding an
+	initial transient period (burn-in). The results are then aggregated
+	across runs to obtain statistical estimates of the ecological regime.
+
+	The metrics focus on population growth characteristics, variability,
+	and survival probability, providing a coarse diagnostic of whether the
+	system operates in a balanced fluctuation-driven regime.
+
+	Parameters
+	----------
+	grid_params : dict
+		Dictionary containing parameters passed to the Grid constructor
+		(e.g., grid size, metabolic cost, food respawn rate, number of agents).
+	num_runs : int, optional
+		Number of independent simulation runs used to estimate regime
+		statistics. Each run uses a different seed.
+	num_ticks : int, optional
+		Number of simulation steps per run.
+	burn_frac : float, optional
+		Fraction of initial simulation steps discarded as burn-in to avoid
+		transient initialization effects when computing statistics.
+	seed : int, optional
+		Base random seed used for reproducibility. Each run increments
+		this seed to ensure independent stochastic realizations.
+
 	Returns
 	-------
-	dict with:
-		"mean_log_growth_rate"
-		"std_log_growth_rate"
-		"mean_coefficient_of_variation"
-		"survival_probability"
-		"population_preservation_probability"
+	None
+		Prints a summary of aggregated regime statistics including:
+
+		mean_log_growth_rate
+			Mean estimated logarithmic population growth rate across runs.
+
+		std_log_growth_rate
+			Standard deviation of the estimated growth rates.
+
+		mean_coefficient_of_variation
+			Average coefficient of variation of population size, indicating
+			the relative magnitude of population fluctuations.
+
+		survival_probability
+			Fraction of runs in which the population remains viable
+			(i.e., both sexes remain present).
+
+		population_preservation_probability
+			Fraction of runs in which the final population size is greater
+			than or equal to the initial population size.
 	"""
 
 	results = []
@@ -847,7 +896,7 @@ def regime_statistics(grid_params, num_runs=20, num_ticks=500, burn_frac=0.3, se
 	print("------------------------------------")
 
 
-def main_simulation(num_runs, num_ticks, num_prtrb_agents, seed, debug_render=False, final_render=False, lyapunov_final_render=False, **grid_params):
+def main_simulation(num_runs, num_ticks, num_prtrb_agents, init_seed, debug_render=False, final_render=False, lyapunov_final_render=False, **grid_params):
 	"""
 	Execute the main experiment pipeline.
 
@@ -858,11 +907,11 @@ def main_simulation(num_runs, num_ticks, num_prtrb_agents, seed, debug_render=Fa
 	Parameters
 	----------
 	num_ticks : int, optional
-		Number of simulation ticks to run. Default is 50.
+		Number of simulation ticks to run.
 	num_prtrb_agents : int, optional
 		Number of agents to be perturbated (by adding energy).
-	seed : int, optional
-		Random seed to ensure deterministic behavior. Default is 123.
+	init_seed : int, optional
+		Random seed to ensure deterministic behavior.
 
 	Returns
 	-------
@@ -870,13 +919,13 @@ def main_simulation(num_runs, num_ticks, num_prtrb_agents, seed, debug_render=Fa
 		Final grid state and estimated Lyapunov exponent.
 	"""
 
-	is_deterministic = check_determinism(num_ticks=num_ticks,seed=seed,debug_render=debug_render,final_render=final_render,**grid_params)
+	is_deterministic = check_determinism(num_ticks=num_ticks,seed=init_seed,debug_render=debug_render,final_render=final_render,**grid_params)
 
 	if not is_deterministic:
 		raise RuntimeError("Simulation environment is non-deterministic.")
 
 	print("----- LYAPUNOV EXPONENT COMPARISON -----")
-	lyap = compare_grids(num_ticks, num_prtrb_agents, seed, final_render, lyapunov_final_render, num_runs, **grid_params)
+	lyap = compare_grids(num_ticks, num_prtrb_agents, init_seed, final_render, lyapunov_final_render, num_runs, **grid_params)
 	print("Estimated Lyapunov exponent:", lyap)
 	print("----- END OF LYAPUNOV EXPONENT COMPARISON -----")
 
@@ -885,7 +934,7 @@ def main_simulation(num_runs, num_ticks, num_prtrb_agents, seed, debug_render=Fa
 num_runs=20
 num_ticks=500
 num_prtrb_agents=1
-seed=123
+init_seed=123
 
 """
 Near-critical ecological growth regime - Random Driven Agents.
@@ -930,7 +979,7 @@ main_simulation(
 	num_runs=num_runs,
 	num_ticks=num_ticks,
 	num_prtrb_agents=num_prtrb_agents,
-	seed=seed,
+	seed=init_seed,
 	**grid_params
 )
 
@@ -971,7 +1020,7 @@ main_simulation(
 	num_runs=num_runs,
 	num_ticks=num_ticks,
 	num_prtrb_agents=num_prtrb_agents,
-	seed=seed,
+	seed=init_seed,
 	**grid_params
 )
 
@@ -1017,7 +1066,7 @@ main_simulation(
 	num_runs=num_runs,
 	num_ticks=num_ticks,
 	num_prtrb_agents=num_prtrb_agents,
-	seed=seed,
+	seed=init_seed,
 	**grid_params
 )
 
@@ -1046,6 +1095,6 @@ main_simulation(
 	num_runs=num_runs,
 	num_ticks=num_ticks,
 	num_prtrb_agents=num_prtrb_agents,
-	seed=seed,
+	seed=init_seed,
 	**grid_params
 )
