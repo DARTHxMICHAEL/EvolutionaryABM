@@ -847,7 +847,7 @@ def regime_statistics(grid_params, num_runs=20, num_ticks=500, burn_frac=0.3, se
 	print("------------------------------------")
 
 
-def main_simulation(num_ticks=50, num_perturbed_agents=1, seed=123, debug_render=False, final_render=True, lyapunov_final_render=True, num_trials=30, **grid_params):
+def main_simulation(num_runs, num_ticks, num_prtrb_agents, seed, debug_render=False, final_render=False, lyapunov_final_render=False, **grid_params):
 	"""
 	Execute the main experiment pipeline.
 
@@ -859,7 +859,7 @@ def main_simulation(num_ticks=50, num_perturbed_agents=1, seed=123, debug_render
 	----------
 	num_ticks : int, optional
 		Number of simulation ticks to run. Default is 50.
-	num_perturbed_agents : int, optional
+	num_prtrb_agents : int, optional
 		Number of agents to be perturbated (by adding energy).
 	seed : int, optional
 		Random seed to ensure deterministic behavior. Default is 123.
@@ -876,7 +876,7 @@ def main_simulation(num_ticks=50, num_perturbed_agents=1, seed=123, debug_render
 		raise RuntimeError("Simulation environment is non-deterministic.")
 
 	print("----- LYAPUNOV EXPONENT COMPARISON -----")
-	lyap = compare_grids(num_ticks, num_perturbed_agents, seed, final_render, lyapunov_final_render, num_trials, **grid_params)
+	lyap = compare_grids(num_ticks, num_prtrb_agents, seed, final_render, lyapunov_final_render, num_runs, **grid_params)
 	print("Estimated Lyapunov exponent:", lyap)
 	print("----- END OF LYAPUNOV EXPONENT COMPARISON -----")
 
@@ -884,6 +884,8 @@ def main_simulation(num_ticks=50, num_perturbed_agents=1, seed=123, debug_render
 
 num_runs=20
 num_ticks=500
+num_prtrb_agents=1
+seed=123
 
 """
 Near-critical ecological growth regime - Random Driven Agents.
@@ -925,13 +927,10 @@ regime_statistics(
 )
 
 main_simulation(
+	num_runs=num_runs,
 	num_ticks=num_ticks,
-	num_perturbed_agents=1,
-	seed=123,
-	debug_render=False, 
-	final_render=True, 
-	lyapunov_final_render=True, 
-	num_trials=num_runs,
+	num_prtrb_agents=num_prtrb_agents,
+	seed=seed,
 	**grid_params
 )
 
@@ -969,13 +968,10 @@ regime_statistics(
 )
 
 main_simulation(
+	num_runs=num_runs,
 	num_ticks=num_ticks,
-	num_perturbed_agents=1,
-	seed=123,
-	debug_render=False,
-	final_render=True,
-	lyapunov_final_render=True,
-	num_trials=num_runs,
+	num_prtrb_agents=num_prtrb_agents,
+	seed=seed,
 	**grid_params
 )
 
@@ -1018,13 +1014,10 @@ regime_statistics(
 )
 
 main_simulation(
+	num_runs=num_runs,
 	num_ticks=num_ticks,
-	num_perturbed_agents=1,
-	seed=123,
-	debug_render=False,
-	final_render=True,
-	lyapunov_final_render=True,
-	num_trials=num_runs,
+	num_prtrb_agents=num_prtrb_agents,
+	seed=seed,
 	**grid_params
 )
 
@@ -1050,12 +1043,9 @@ regime_statistics(
 )
 
 main_simulation(
+	num_runs=num_runs,
 	num_ticks=num_ticks,
-	num_perturbed_agents=1,
-	seed=123,
-	debug_render=False,
-	final_render=True,
-	lyapunov_final_render=True,
-	num_trials=num_runs,
+	num_prtrb_agents=num_prtrb_agents,
+	seed=seed,
 	**grid_params
 )
