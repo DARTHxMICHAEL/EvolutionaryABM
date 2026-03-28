@@ -511,7 +511,7 @@ def grid_difference(g1, g2):
 	return diff / total
 
 
-def lyapunov_analysis(g1, g2, num_ticks=50, render=False, **grid_params):
+def lyapunov_analysis(g1, g2, num_ticks=50, render=False, trial=1, **grid_params):
 	"""
 	Estimate the maximal finite-time Lyapunov exponent via lockstep evolution.
 
@@ -596,7 +596,7 @@ def lyapunov_analysis(g1, g2, num_ticks=50, render=False, **grid_params):
 	# compute local slopes
 	slopes = np.diff(log_diffs)
 
-	# smooth slopes slightly (optional but recommended)
+	# smooth slopes slightly (optional step)
 	window = 5
 	smoothed = np.convolve(slopes, np.ones(window)/window, mode='valid')
 
@@ -604,9 +604,11 @@ def lyapunov_analysis(g1, g2, num_ticks=50, render=False, **grid_params):
 	initial_slope = smoothed[0]
 
 	# detect saturation: when slope drops below 50% of initial slope
-	threshold = 0.5 * initial_slope
+	threshold = 0.9 * initial_slope
 
 	cutoff = len(smoothed)
+	cutoff_percentage = (cutoff/num_ticks)*100
+	print(f"{trial+1} - lyap-cutoff: {cutoff_percentage:.1f}%")
 
 	for i, s in enumerate(smoothed):
 		if s < threshold:
@@ -662,7 +664,7 @@ def compare_grids(num_ticks=50, num_perturbed_agents=1, seed=123, final_render=T
 				agent.energy += g2.min_child_energy
 
 		lyap, diffs = lyapunov_analysis(
-			g1, g2, num_ticks, lyapunov_final_render, **grid_params
+			g1, g2, num_ticks, lyapunov_final_render, trial, **grid_params
 		)
 
 		lambdas.append(lyap)
@@ -932,8 +934,8 @@ def main_simulation(num_runs, num_ticks, num_prtrb_agents, init_seed, debug_rend
 
 
 num_runs=20
-num_ticks=500
-num_prtrb_agents=1
+num_ticks=5000
+num_prtrb_agents=2
 init_seed=123
 
 """
@@ -979,7 +981,7 @@ main_simulation(
 	num_runs=num_runs,
 	num_ticks=num_ticks,
 	num_prtrb_agents=num_prtrb_agents,
-	seed=init_seed,
+	init_seed=init_seed,
 	**grid_params
 )
 
@@ -1020,7 +1022,7 @@ main_simulation(
 	num_runs=num_runs,
 	num_ticks=num_ticks,
 	num_prtrb_agents=num_prtrb_agents,
-	seed=init_seed,
+	init_seed=init_seed,
 	**grid_params
 )
 
@@ -1066,7 +1068,7 @@ main_simulation(
 	num_runs=num_runs,
 	num_ticks=num_ticks,
 	num_prtrb_agents=num_prtrb_agents,
-	seed=init_seed,
+	init_seed=init_seed,
 	**grid_params
 )
 
@@ -1095,6 +1097,6 @@ main_simulation(
 	num_runs=num_runs,
 	num_ticks=num_ticks,
 	num_prtrb_agents=num_prtrb_agents,
-	seed=init_seed,
+	init_seed=init_seed,
 	**grid_params
 )
