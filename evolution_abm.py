@@ -511,13 +511,10 @@ def grid_difference(g1, g2):
 	return diff / total
 
 
-def lyapunov_analysis(g1, g2, num_ticks=50, render=False, trial=1, **grid_params):
+def lyapunov_analysis(g1, g2, num_ticks=50, render=False, trial=1, cutoff=0.2,**grid_params):
 	"""
-	Estimate the maximal finite-time Lyapunov exponent via lockstep evolution.
+	Estimate the maximal finite-time Lyapunov exponent (FTLE) via lockstep evolution.
 
-	The two grids are evolved in strict lockstep per tick to preserve dynamical comparability and maintain 
-	identical stochastic forcing (RNG streams are handled internally by each grid). At each tick, their
-	continuous phase-space distance d(t) is measured and saved.
 
 	Methodology
 	-----------
@@ -529,43 +526,18 @@ def lyapunov_analysis(g1, g2, num_ticks=50, render=False, trial=1, **grid_params
 
 		log d(t) ≈ log d0 + λ t
 
-	A linear fit is applied only to the early-time exponential regime.
-	The cutoff is determined dynamically using a slope-collapse criterion:
+	The FTLE is estimated as the slope of log(d(t)) in the early exponential divergence regime.
+	To ensure reproducibility and simplicity, a **fixed 20% cutoff** of the total ticks is used
+	for the linear regression, corresponding to the initial phase of divergence.
 
-	1. Compute local slopes of log d(t)
-	2. Smooth slopes via moving average
-	3. Detect saturation when the slope falls below 50% of its initial value
-	4. Fit λ on the maximal pre-saturation interval
-
-	This avoids arbitrary truncation (e.g., fixed 30% window) and instead
-	identifies the exponential regime directly from the data.
-
-	Conceptual Notes
-	----------------
-	• The estimate is a finite-time Lyapunov exponent (FTLE),
-	  appropriate for bounded, discrete agent-based systems.
-	• This function quantifies dynamical sensitivity to initial conditions,
-	not macroscopic disorder.
-
-	Parameters
-	----------
-	g1, g2 : Grid
-		Two nearly identical initial configurations.
-	num_ticks : int
-		Number of lockstep evolution steps.
-	render : bool
-		If True, renders initial and final states.
-	**grid_params :
-		Additional parameters (e.g., min_child_energy for entropy calculation).
-
-	Returns
-	-------
-	tuple of (float, list)
-		Estimated finite-time Lyapunov exponent and divergence trajectory.
+	-----------
+	- ΔH is computed as the absolute difference in Shannon entropy between the two grids
+	at the end of the run. It serves as an auxiliary measure of macroscopic divergence.
+	- Regression is performed with numpy.polyfit on log distances over the cutoff period.
+	- Render option visualizes initial and final states along with their entropies.
 	"""
 	diffs = []
 
-	# initial distance
 	d0 = max(grid_difference(g1, g2), 1e-12)
 	diffs.append(d0)
 
@@ -593,42 +565,21 @@ def lyapunov_analysis(g1, g2, num_ticks=50, render=False, trial=1, **grid_params
 
 	log_diffs = np.log(diffs)
 
-	# compute local slopes
-	slopes = np.diff(log_diffs)
+	# early-time linear regime cutoff
+	cutoff = max(10, int(cutoff * num_ticks))
+	cutoff_pct = (cutoff / num_ticks) * 100
 
-	# smooth slopes slightly (optional step)
-	window = 5
-	smoothed = np.convolve(slopes, np.ones(window)/window, mode='valid')
-
-	# initial slope estimate
-	initial_slope = smoothed[0]
-
-	# detect saturation: when slope drops below 50% of initial slope
-	threshold = 0.1 * initial_slope
-
-	cutoff = len(smoothed)
-	cutoff_pct = (cutoff/num_ticks)*100
-
-	for i, s in enumerate(smoothed):
-		if s < threshold:
-			cutoff = i + window  # convolution offset
-			break
-
-	# safety floor
-	cutoff = max(5, cutoff)
-
+	# regression
 	x = np.arange(cutoff)
 	y = log_diffs[:cutoff]
 
 	slope, _ = np.polyfit(x, y, 1)
 	lyap = slope
 
-	# shannon entropy
-	g1_shannon_entropy =  shannon_entropy(g1, grid_params['min_child_energy'])
-	g2_shannon_entropy =  shannon_entropy(g2, grid_params['min_child_energy'])
-	shannon_diff = abs(g2_shannon_entropy - g1_shannon_entropy)
+	g1_H = shannon_entropy(g1, grid_params['min_child_energy'])
+	g2_H = shannon_entropy(g2, grid_params['min_child_energy'])
+	shannon_diff = abs(g2_H - g1_H)
 
-	# run details
 	print(
 		f"[Run {trial+1:02d}] "
 		f"λ = {lyap:.5f} | "
@@ -636,10 +587,22 @@ def lyapunov_analysis(g1, g2, num_ticks=50, render=False, trial=1, **grid_params
 		f"ΔH = {shannon_diff:.5f}"
 	)
 
+	# --- divergence trajectory plot ---
+	plt.figure(figsize=(6,4))
+	plt.plot(range(len(diffs)), diffs, label='d(t) trajectory')
+	plt.axvline(x=cutoff, color='red', linestyle='--', label=f'Cutoff ({cutoff_pct:.1f}%)')
+	plt.xlabel('Tick')
+	plt.ylabel('Phase-space distance d(t)')
+	plt.title(f'Lyapunov Divergence Run {trial+1}')
+	plt.legend()
+	plt.grid(True)
+
+	plt.show()
+
 	return lyap, diffs, shannon_diff, cutoff_pct
 
 
-def compare_grids(num_ticks=50, num_perturbed_agents=1, seed=123, final_render=True, lyapunov_final_render=True, num_trials=30, **grid_params):
+def compare_grids(num_ticks=50, num_perturbed_agents=1, seed=123, final_render=True, lyapunov_final_render=True, num_trials=30, cutoff=0.2, **grid_params):
 	"""
 	Compare two nearly identical grid simulations to estimate the Lyapunov exponent.
 
@@ -658,8 +621,10 @@ def compare_grids(num_ticks=50, num_perturbed_agents=1, seed=123, final_render=T
 
 	Returns
 	-------
-	float
+	mean_lambda : float
 		Estimated Lyapunov exponent of the system.
+	mean_H : float
+		Shannon entorpy difference between two grids.
 	"""
 	lambdas = []
 	shannon_diffs = []
@@ -678,7 +643,7 @@ def compare_grids(num_ticks=50, num_perturbed_agents=1, seed=123, final_render=T
 				agent.energy += g2.min_child_energy
 
 		lyap, diffs, shannon_diff, cutoff_pct = lyapunov_analysis(
-			g1, g2, num_ticks, lyapunov_final_render, trial, **grid_params
+			g1, g2, num_ticks, lyapunov_final_render, trial, cutoff, **grid_params
 		)
 
 		lambdas.append(lyap)
@@ -696,9 +661,8 @@ def compare_grids(num_ticks=50, num_perturbed_agents=1, seed=123, final_render=T
 	print("\n----- SUMMARY -----")
 	print(f"Lyapunov exponent     : {mean_lambda:.6f} ± {std_lambda:.6f}")
 	print(f"Shannon entropy ΔH    : {mean_H:.6f} ± {std_H:.6f}")
-	print(f"Mean cutoff           : {mean_cutoff:.2f}%")
 
-	return mean_lambda
+	return mean_lambda, mean_H
 
 
 def check_determinism(num_ticks, seed, debug_render=False, final_render=True, **grid_params):
@@ -922,7 +886,7 @@ def regime_statistics(grid_params, num_runs=20, num_ticks=500, burn_frac=0.3, se
 	print("--------------------------------------")
 
 
-def main_simulation(num_runs, num_ticks, num_prtrb_agents, init_seed, debug_render=False, final_render=False, lyapunov_final_render=False, **grid_params):
+def main_simulation(num_runs, num_ticks, num_prtrb_agents, init_seed, cutoff, debug_render=False, final_render=False, lyapunov_final_render=False, **grid_params):
 	"""
 	Execute the main experiment pipeline.
 
@@ -946,27 +910,21 @@ def main_simulation(num_runs, num_ticks, num_prtrb_agents, init_seed, debug_rend
 	"""
 
 	print("\n----- PARAMETERS LIST -----")
-
 	print(f"Number of runs              : {num_runs}")
 	print(f"Simulation ticks            : {num_ticks}")
 	print(f"Perturbed agents            : {num_prtrb_agents}")
 	print(f"Initial random seed         : {init_seed}")
-
 	print(f"Grid width                  : {grid_params['width']}")
 	print(f"Grid height                 : {grid_params['height']}")
-
 	print(f"Metabolic cost              : {grid_params['metabolic_cost']}")
 	print(f"Minimum child energy        : {grid_params['min_child_energy']}")
 	print(f"Reproduction cost           : {grid_params['reproduction_cost']}")
 	print(f"Food respawn rate           : {grid_params['food_respawn_rate']}")
-
 	print(f"Initial number of agents    : {grid_params['num_agents']}")
 	print(f"Initial number of apples    : {grid_params['num_apples']}")
 	print(f"Initial number of oranges   : {grid_params['num_oranges']}")
 	print(f"Number of walls             : {grid_params['num_walls']}")
-
 	print(f"Agent decision mechanism    : {'Neural Network' if grid_params['use_nn'] else 'Random'}")
-
 	print("--------------------------------------")
 
 	is_deterministic = check_determinism(num_ticks=num_ticks,seed=init_seed,debug_render=debug_render,final_render=final_render,**grid_params)
@@ -975,15 +933,16 @@ def main_simulation(num_runs, num_ticks, num_prtrb_agents, init_seed, debug_rend
 		raise RuntimeError("Simulation environment is non-deterministic.")
 
 	print("\n----- LYAPUNOV EXPONENT COMPARISON -----")
-	lyap = compare_grids(num_ticks, num_prtrb_agents, init_seed, final_render, lyapunov_final_render, num_runs, **grid_params)
+	lyap = compare_grids(num_ticks, num_prtrb_agents, init_seed, final_render, lyapunov_final_render, num_runs, cutoff, **grid_params)
 	print("--------------------------------------")
 
 
 
-num_runs=2
-num_ticks=10000
+num_runs=20
+num_ticks=15000
 num_prtrb_agents=2
 init_seed=123
+cutoff=0.05
 
 """
 Near-critical ecological growth regime - Random Driven Agents.
@@ -1029,6 +988,7 @@ main_simulation(
 	num_ticks=num_ticks,
 	num_prtrb_agents=num_prtrb_agents,
 	init_seed=init_seed,
+	cutoff=cutoff,
 	**grid_params
 )
 
