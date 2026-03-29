@@ -604,11 +604,10 @@ def lyapunov_analysis(g1, g2, num_ticks=50, render=False, trial=1, **grid_params
 	initial_slope = smoothed[0]
 
 	# detect saturation: when slope drops below 50% of initial slope
-	threshold = 0.9 * initial_slope
+	threshold = 0.1 * initial_slope
 
 	cutoff = len(smoothed)
-	cutoff_percentage = (cutoff/num_ticks)*100
-	print(f"{trial+1} - lyap-cutoff: {cutoff_percentage:.1f}%")
+	cutoff_pct = (cutoff/num_ticks)*100
 
 	for i, s in enumerate(smoothed):
 		if s < threshold:
@@ -624,7 +623,20 @@ def lyapunov_analysis(g1, g2, num_ticks=50, render=False, trial=1, **grid_params
 	slope, _ = np.polyfit(x, y, 1)
 	lyap = slope
 
-	return lyap, diffs
+	# shannon entropy
+	g1_shannon_entropy =  shannon_entropy(g1, grid_params['min_child_energy'])
+	g2_shannon_entropy =  shannon_entropy(g2, grid_params['min_child_energy'])
+	shannon_diff = abs(g2_shannon_entropy - g1_shannon_entropy)
+
+	# run details
+	print(
+		f"[Run {trial+1:02d}] "
+		f"λ = {lyap:.5f} | "
+		f"cutoff = {cutoff_pct:6.2f}% | "
+		f"ΔH = {shannon_diff:.5f}"
+	)
+
+	return lyap, diffs, shannon_diff, cutoff_pct
 
 
 def compare_grids(num_ticks=50, num_perturbed_agents=1, seed=123, final_render=True, lyapunov_final_render=True, num_trials=30, **grid_params):
@@ -650,6 +662,8 @@ def compare_grids(num_ticks=50, num_perturbed_agents=1, seed=123, final_render=T
 		Estimated Lyapunov exponent of the system.
 	"""
 	lambdas = []
+	shannon_diffs = []
+	cutoffs = []
 
 	for trial in range(num_trials):
 		g1 = Grid(**grid_params, seed=seed + trial)
@@ -663,16 +677,26 @@ def compare_grids(num_ticks=50, num_perturbed_agents=1, seed=123, final_render=T
 			for agent in perturbed:
 				agent.energy += g2.min_child_energy
 
-		lyap, diffs = lyapunov_analysis(
+		lyap, diffs, shannon_diff, cutoff_pct = lyapunov_analysis(
 			g1, g2, num_ticks, lyapunov_final_render, trial, **grid_params
 		)
 
 		lambdas.append(lyap)
+		shannon_diffs.append(shannon_diff)
+		cutoffs.append(cutoff_pct)
 
 	mean_lambda = np.mean(lambdas)
 	std_lambda = np.std(lambdas)
 
-	print(f"Lyapunov exponent: {mean_lambda:.6f} ± {std_lambda:.6f}")
+	mean_H = np.mean(shannon_diffs)
+	std_H = np.std(shannon_diffs)
+
+	mean_cutoff = np.mean(cutoffs)
+
+	print("\n----- SUMMARY -----")
+	print(f"Lyapunov exponent     : {mean_lambda:.6f} ± {std_lambda:.6f}")
+	print(f"Shannon entropy ΔH    : {mean_H:.6f} ± {std_H:.6f}")
+	print(f"Mean cutoff           : {mean_cutoff:.2f}%")
 
 	return mean_lambda
 
@@ -689,7 +713,7 @@ def check_determinism(num_ticks, seed, debug_render=False, final_render=True, **
 	bool
 		True if deterministic, False otherwise.
 	"""
-	print("----- DETERMINISTIC CHECK -----")
+	print("\n----- DETERMINISTIC CHECK -----")
 
 	g1 = Grid(**grid_params, seed=seed)
 	g2 = Grid(**grid_params, seed=seed)
@@ -729,7 +753,7 @@ def check_determinism(num_ticks, seed, debug_render=False, final_render=True, **
 		return False
 
 	print("Determinism check PASSED.")
-	print("----- END OF DETERMINISTIC CHECK -----")
+	print("--------------------------------------")
 	return True
 
 
@@ -890,12 +914,12 @@ def regime_statistics(grid_params, num_runs=20, num_ticks=500, burn_frac=0.3, se
 	mean_cv = np.mean(cv_vals)
 
 	print("----- REGIME STABILITY SUMMARY -----")
-	print(f"Mean log population growth rate: {mean_r:.6f}")
-	print(f"Standard deviation of log growth rate: {std_r:.6f}")
-	print(f"Mean coefficient of variation: {mean_cv:.6f}")
-	print(f"Viability preservation probability: {viability_rate:.3f}")
-	print(f"Population preservation probability: {preservation_rate:.3f}")
-	print("------------------------------------")
+	print(f"{'Mean log population growth rate':45s}: {mean_r:.6f}")
+	print(f"{'Standard deviation of log growth rate':45s}: {std_r:.6f}")
+	print(f"{'Mean coefficient of variation':45s}: {mean_cv:.6f}")
+	print(f"{'Viability preservation probability':45s}: {viability_rate:.3f}")
+	print(f"{'Population preservation probability':45s}: {preservation_rate:.3f}")
+	print("--------------------------------------")
 
 
 def main_simulation(num_runs, num_ticks, num_prtrb_agents, init_seed, debug_render=False, final_render=False, lyapunov_final_render=False, **grid_params):
@@ -921,20 +945,43 @@ def main_simulation(num_runs, num_ticks, num_prtrb_agents, init_seed, debug_rend
 		Final grid state and estimated Lyapunov exponent.
 	"""
 
+	print("\n----- PARAMETERS LIST -----")
+
+	print(f"Number of runs              : {num_runs}")
+	print(f"Simulation ticks            : {num_ticks}")
+	print(f"Perturbed agents            : {num_prtrb_agents}")
+	print(f"Initial random seed         : {init_seed}")
+
+	print(f"Grid width                  : {grid_params['width']}")
+	print(f"Grid height                 : {grid_params['height']}")
+
+	print(f"Metabolic cost              : {grid_params['metabolic_cost']}")
+	print(f"Minimum child energy        : {grid_params['min_child_energy']}")
+	print(f"Reproduction cost           : {grid_params['reproduction_cost']}")
+	print(f"Food respawn rate           : {grid_params['food_respawn_rate']}")
+
+	print(f"Initial number of agents    : {grid_params['num_agents']}")
+	print(f"Initial number of apples    : {grid_params['num_apples']}")
+	print(f"Initial number of oranges   : {grid_params['num_oranges']}")
+	print(f"Number of walls             : {grid_params['num_walls']}")
+
+	print(f"Agent decision mechanism    : {'Neural Network' if grid_params['use_nn'] else 'Random'}")
+
+	print("--------------------------------------")
+
 	is_deterministic = check_determinism(num_ticks=num_ticks,seed=init_seed,debug_render=debug_render,final_render=final_render,**grid_params)
 
 	if not is_deterministic:
 		raise RuntimeError("Simulation environment is non-deterministic.")
 
-	print("----- LYAPUNOV EXPONENT COMPARISON -----")
+	print("\n----- LYAPUNOV EXPONENT COMPARISON -----")
 	lyap = compare_grids(num_ticks, num_prtrb_agents, init_seed, final_render, lyapunov_final_render, num_runs, **grid_params)
-	print("Estimated Lyapunov exponent:", lyap)
-	print("----- END OF LYAPUNOV EXPONENT COMPARISON -----")
+	print("--------------------------------------")
 
 
 
-num_runs=20
-num_ticks=5000
+num_runs=2
+num_ticks=10000
 num_prtrb_agents=2
 init_seed=123
 
@@ -985,6 +1032,8 @@ main_simulation(
 	**grid_params
 )
 
+
+print("\n")
 """
 Near-critical ecological growth regime - ANN Driven Agents.
 --- ---
@@ -1027,6 +1076,7 @@ main_simulation(
 )
 
 
+print("\n")
 """
 Identical ecological constraints scenario.
 --- ---
@@ -1072,6 +1122,8 @@ main_simulation(
 	**grid_params
 )
 
+
+print("\n")
 # identical ecological constraints - nn agents
 grid_params = {
 	"width": 100,
