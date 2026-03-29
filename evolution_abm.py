@@ -57,14 +57,14 @@ class SimpleNN:
 		limit2 = 1 / math.sqrt(hidden_size)
 
 		self.W1 = np.array([[rng.uniform(-limit1, limit1)
-		                     for _ in range(input_size)]
-		                    for _ in range(hidden_size)])
+							 for _ in range(input_size)]
+							for _ in range(hidden_size)])
 
 		self.b1 = np.zeros(hidden_size)
 
 		self.W2 = np.array([[rng.uniform(-limit2, limit2)
-		                     for _ in range(hidden_size)]
-		                    for _ in range(output_size)])
+							 for _ in range(hidden_size)]
+							for _ in range(output_size)])
 
 		self.b2 = np.zeros(output_size)
 
@@ -511,37 +511,75 @@ def grid_difference(g1, g2):
 	return diff / total
 
 
-def lyapunov_analysis(g1, g2, num_ticks=50, render=False, trial=1, cutoff=0.2,**grid_params):
+def main_analysis(g1, g2, num_ticks=50, render=False, trial=1, cutoff=0.2, **grid_params):
 	"""
-	Estimate the maximal finite-time Lyapunov exponent (FTLE) via lockstep evolution.
-
+	Estimate the maximal finite-time Lyapunov exponent (FTLE) via lockstep evolution,
+	compute Shannon entropy difference, and calculate basic regime stability metrics.
 
 	Methodology
 	-----------
-	The Lyapunov exponent λ is estimated from the exponential growth regime:
-
+	- Lyapunov exponent λ is estimated from the early exponential divergence:
 		d(t) ≈ d0 * exp(λ t)
-
-	which implies:
-
 		log d(t) ≈ log d0 + λ t
+	  using a fixed cutoff fraction of total ticks for regression.
 
-	The FTLE is estimated as the slope of log(d(t)) in the early exponential divergence regime.
-	To ensure reproducibility and simplicity, a **fixed 20% cutoff** of the total ticks is used
-	for the linear regression, corresponding to the initial phase of divergence.
+	- Shannon entropy difference ΔH is computed at the final tick as a macroscopic measure
+	  of structural divergence between the two grids. Agents are categorized by sex and energy
+	  thresholds, food types, walls, and empty cells. The entropy is computed as:
+		  H = -Σ (p_i * log2(p_i))
+	  where p_i is the probability of each discrete cell state.
 
-	-----------
-	- ΔH is computed as the absolute difference in Shannon entropy between the two grids
-	at the end of the run. It serves as an auxiliary measure of macroscopic divergence.
-	- Regression is performed with numpy.polyfit on log distances over the cutoff period.
-	- Render option visualizes initial and final states along with their entropies.
+	- Population dynamics metrics are recorded to assess regime stability:
+		- Mean log-growth rate of population
+		- Coefficient of variation (CV)
+		- Viability (both sexes present)
+		- Population preservation (final population >= initial population)
+
+	Parameters
+	----------
+	g1, g2 : Grid
+		Two Grid instances with nearly identical initial states (g2 can have a small perturbation).
+	num_ticks : int, optional
+		Number of simulation ticks. Default 50.
+	render : bool, optional
+		If True, renders initial and final grid states. Default False.
+	trial : int, optional
+		Trial index for display purposes. Default 1.
+	cutoff : float, optional
+		Fraction of total ticks used for Lyapunov regression. Default 0.2.
+	**grid_params : dict
+		Additional grid parameters required for entropy computation and population metrics.
+
+	Returns
+	-------
+	dict
+		Dictionary containing the following metrics:
+		- "lyap" : float
+			Estimated finite-time Lyapunov exponent.
+		- "diffs" : list of float
+			Phase-space distances d(t) trajectory.
+		- "shannon_diff" : float
+			Shannon entropy difference ΔH between grids at final tick.
+		- "cutoff_pct" : float
+			Actual cutoff fraction (%) used for regression.
+		- "r" : float
+			Estimated mean log-growth rate of population (after burn-in).
+		- "cv" : float
+			Coefficient of variation of population size (after burn-in).
+		- "viable" : bool
+			True if both sexes are present in final population.
+		- "population_preserved" : bool
+			True if final population >= initial population.
+		- "final_population" : int
+			Population size at the final tick.
 	"""
 	diffs = []
+	pop_history = []
 
 	d0 = max(grid_difference(g1, g2), 1e-12)
 	diffs.append(d0)
 
-	if render == True:
+	if render:
 		g1.render()
 		print("Grid 1 - Initial Shannon entropy:", shannon_entropy(g1, grid_params['min_child_energy']))
 		g2.render()
@@ -556,59 +594,94 @@ def lyapunov_analysis(g1, g2, num_ticks=50, render=False, trial=1, cutoff=0.2,**
 
 		d = max(grid_difference(g1, g2), 1e-12)
 		diffs.append(d)
+		pop_history.append(len(g1.agents))
 
-	if render == True:
+	if render:
 		g1.render()
 		print("Grid 1 - Final Shannon entropy:", shannon_entropy(g1, grid_params['min_child_energy']))
 		g2.render()
 		print("Grid 2 - Final Shannon entropy:", shannon_entropy(g2, grid_params['min_child_energy']))
 
+	# -- lyap --
 	log_diffs = np.log(diffs)
-
-	# early-time linear regime cutoff
 	cutoff = max(10, int(cutoff * num_ticks))
 	cutoff_pct = (cutoff / num_ticks) * 100
 
-	# regression
+	# early-time linear regime cutoff
 	x = np.arange(cutoff)
 	y = log_diffs[:cutoff]
 
 	slope, _ = np.polyfit(x, y, 1)
 	lyap = slope
 
+	# --- entropy ---
 	g1_H = shannon_entropy(g1, grid_params['min_child_energy'])
 	g2_H = shannon_entropy(g2, grid_params['min_child_energy'])
 	shannon_diff = abs(g2_H - g1_H)
 
+	# --- regime metrics ---
+	pop_history = np.array(pop_history)
+	g = g1
+	burn_frac = 0.3
+	
+	if pop_history[-1] == 0:
+		viable = 0
+	else:
+		viable = any(a.sex == 1 for a in g.agents) and any(a.sex == 0 for a in g.agents)
+
+	population_preserved = pop_history[-1] >= grid_params['num_agents']
+
+	pop_history_safe = np.maximum(pop_history, 1)
+
+	start = int(burn_frac * num_ticks)
+	t_vals = np.arange(start, num_ticks)
+
+	logN = np.log(pop_history_safe[start:])
+
+	if len(logN) > 5:
+		r, _ = np.polyfit(t_vals, logN, 1)
+	else:
+		r = float("nan")
+
+	meanN = np.mean(pop_history[start:])
+	stdN = np.std(pop_history[start:])
+	cv = stdN / meanN if meanN > 0 else float("inf")
+
 	print(
 		f"[Run {trial+1:02d}] "
 		f"λ = {lyap:.5f} | "
-		f"cutoff = {cutoff_pct:6.2f}% | "
+		f"cutoff = {cutoff:6.2f}% | "
 		f"ΔH = {shannon_diff:.5f}"
 	)
 
 	# --- divergence trajectory plot ---
-	plt.figure(figsize=(6,4))
+	plt.figure(figsize=(6, 4))
 	plt.plot(range(len(diffs)), diffs, label='d(t) trajectory')
-	plt.axvline(x=cutoff, color='red', linestyle='--', label=f'Cutoff ({cutoff_pct:.1f}%)')
+	plt.axvline(x=cutoff, color='red', linestyle='--', label=f'Cutoff ({cutoff:.1f}%)')
 	plt.xlabel('Tick')
 	plt.ylabel('Phase-space distance d(t)')
 	plt.title(f'Lyapunov Divergence Run {trial+1}')
 	plt.legend()
 	plt.grid(True)
-
 	plt.show()
 
-	return lyap, diffs, shannon_diff, cutoff_pct
+	return {
+		"lyap": lyap,
+		"diffs": diffs,
+		"shannon_diff": shannon_diff,
+		"cutoff_pct": cutoff_pct,
+		"r": r,
+		"cv": cv,
+		"viable": viable,
+		"population_preserved": population_preserved,
+		"final_population": int(pop_history[-1])
+	}
 
 
 def compare_grids(num_ticks=50, num_perturbed_agents=1, seed=123, final_render=True, lyapunov_final_render=True, num_trials=30, cutoff=0.2, **grid_params):
 	"""
-	Compare two nearly identical grid simulations to estimate the Lyapunov exponent.
-
-	A second grid is created with the same grid parameters as teh first one, with a 
-	small structural perturbation applied to it. Both simulations are then evolved and
-	compared over time to measure the divergence.
+	Compare two nearly identical grid simulations to estimate the Lyapunov exponent,
+	Shannon entropy and aggregate regime statistics over multiple trials.
 
 	Parameters
 	----------
@@ -618,17 +691,23 @@ def compare_grids(num_ticks=50, num_perturbed_agents=1, seed=123, final_render=T
 		Number of agents to be perturbated (by adding energy).
 	seed : int, optional
 		Random seed ensuring deterministic setup. Default is 123.
+	cutoff : float, optional
+		Fraction of ticks used for Lyapunov regression. Default is 0.2.
 
 	Returns
 	-------
 	mean_lambda : float
 		Estimated Lyapunov exponent of the system.
 	mean_H : float
-		Shannon entorpy difference between two grids.
+		Shannon entropy difference between two grids.
 	"""
 	lambdas = []
 	shannon_diffs = []
 	cutoffs = []
+	r_vals = []
+	cv_vals = []
+	viable_flags = []
+	pop_preserved_flags = []
 
 	for trial in range(num_trials):
 		g1 = Grid(**grid_params, seed=seed + trial)
@@ -638,29 +717,44 @@ def compare_grids(num_ticks=50, num_perturbed_agents=1, seed=123, final_render=T
 			local_rng = random.Random(seed + 999 + trial)
 			k = min(num_perturbed_agents, len(g2.agents))
 			perturbed = local_rng.sample(g2.agents, k)
-
 			for agent in perturbed:
 				agent.energy += g2.min_child_energy
 
-		lyap, diffs, shannon_diff, cutoff_pct = lyapunov_analysis(
+		result = main_analysis(
 			g1, g2, num_ticks, lyapunov_final_render, trial, cutoff, **grid_params
 		)
 
-		lambdas.append(lyap)
-		shannon_diffs.append(shannon_diff)
-		cutoffs.append(cutoff_pct)
+		lambdas.append(result["lyap"])
+		shannon_diffs.append(result["shannon_diff"])
+		cutoffs.append(result["cutoff_pct"])
+		r_vals.append(result["r"])
+		cv_vals.append(result["cv"])
+		viable_flags.append(result["viable"])
+		pop_preserved_flags.append(result["population_preserved"])
 
+	# --- lyap & entropy ---
 	mean_lambda = np.mean(lambdas)
 	std_lambda = np.std(lambdas)
-
 	mean_H = np.mean(shannon_diffs)
 	std_H = np.std(shannon_diffs)
-
-	mean_cutoff = np.mean(cutoffs)
 
 	print("\n----- SUMMARY -----")
 	print(f"Lyapunov exponent     : {mean_lambda:.6f} ± {std_lambda:.6f}")
 	print(f"Shannon entropy ΔH    : {mean_H:.6f} ± {std_H:.6f}")
+
+	# --- regime stats ---
+	mean_r = np.mean(r_vals)
+	std_r = np.std(r_vals)
+	mean_cv = np.mean(cv_vals)
+	viability_rate = np.mean(viable_flags)
+	preservation_rate = np.mean(pop_preserved_flags)
+
+	print("\n----- REGIME SUMMARY -----")
+	print(f"{'Mean log population growth rate':45s}: {mean_r:.6f}")
+	print(f"{'Standard deviation of log growth rate':45s}: {std_r:.6f}")
+	print(f"{'Mean coefficient of variation':45s}: {mean_cv:.6f}")
+	print(f"{'Viability preservation probability':45s}: {viability_rate:.3f}")
+	print(f"{'Population preservation probability':45s}: {preservation_rate:.3f}")
 
 	return mean_lambda, mean_H
 
@@ -721,171 +815,6 @@ def check_determinism(num_ticks, seed, debug_render=False, final_render=True, **
 	return True
 
 
-def measure_regime_stability(grid_params, num_ticks=500, burn_frac=0.3, seed=123):
-	"""
-	Run a single simulation and compute basic regime stability metrics.
-
-	Parameters
-	----------
-	grid_params : dict
-		Parameters passed to Grid constructor.
-	num_ticks : int
-		Total simulation steps.
-	burn_frac : float
-		Fraction of initial steps discarded before statistics.
-	seed : int
-		Random seed for this run.
-
-	Returns
-	-------
-	dict with:
-		"r" : float
-			Estimated mean log-population growth rate.
-		"cv" : float
-			Coefficient of variation of population size.
-		"viable" : bool
-			Whether population is able to reproduce.
-		"population_preserved" : bool
-			Whether final population >= initial population.
-		"final_population" : int
-			Population size at final step.
-	"""
-
-	g = Grid(**grid_params, seed=seed)
-
-	pop_history = []
-
-	for t in range(num_ticks):
-		g.move_agent()
-		g.respawn_food()
-		pop_history.append(len(g.agents))
-
-	pop_history = np.array(pop_history)
-
-	if pop_history[-1] == 0:
-		viable = 0
-	else:
-		viable = any(a.sex == 1 for a in g.agents) and any(a.sex == 0 for a in g.agents)
-
-	population_preserved = pop_history[-1] >= grid_params['num_agents']
-
-	pop_history_safe = np.maximum(pop_history, 1)
-
-	start = int(burn_frac * num_ticks)
-	t_vals = np.arange(start, num_ticks)
-
-	logN = np.log(pop_history_safe[start:])
-
-	if len(logN) > 5:
-		r, _ = np.polyfit(t_vals, logN, 1)
-	else:
-		r = float("nan")
-
-	meanN = np.mean(pop_history[start:])
-	stdN = np.std(pop_history[start:])
-	cv = stdN / meanN if meanN > 0 else float("inf")
-
-	return {
-		"r": r,
-		"cv": cv,
-		"viable": viable,
-		"population_preserved": population_preserved,
-		"final_population": int(pop_history[-1])
-	}
-
-
-def regime_statistics(grid_params, num_runs=20, num_ticks=500, burn_frac=0.3, seed=123):
-	"""
-	Run multiple simulations and aggregate regime stability statistics.
-
-	This function evaluates whether the chosen ecological parameter set
-	produces a dynamically stable and non-trivial regime. In agent-based
-	ecological models, certain parameter combinations can lead to trivial
-	outcomes such as immediate population extinction or uncontrolled
-	population explosion. Such regimes are unsuitable for dynamical
-	analysis, particularly when estimating quantities such as Lyapunov
-	exponents or entropy-based structural measures.
-
-	To assess regime stability, the simulation is executed multiple times
-	with different random seeds. Each run produces summary metrics
-	describing the long-term population dynamics after discarding an
-	initial transient period (burn-in). The results are then aggregated
-	across runs to obtain statistical estimates of the ecological regime.
-
-	The metrics focus on population growth characteristics, variability,
-	and survival probability, providing a coarse diagnostic of whether the
-	system operates in a balanced fluctuation-driven regime.
-
-	Parameters
-	----------
-	grid_params : dict
-		Dictionary containing parameters passed to the Grid constructor
-		(e.g., grid size, metabolic cost, food respawn rate, number of agents).
-	num_runs : int, optional
-		Number of independent simulation runs used to estimate regime
-		statistics. Each run uses a different seed.
-	num_ticks : int, optional
-		Number of simulation steps per run.
-	burn_frac : float, optional
-		Fraction of initial simulation steps discarded as burn-in to avoid
-		transient initialization effects when computing statistics.
-	seed : int, optional
-		Base random seed used for reproducibility. Each run increments
-		this seed to ensure independent stochastic realizations.
-
-	Returns
-	-------
-	None
-		Prints a summary of aggregated regime statistics including:
-
-		mean_log_growth_rate
-			Mean estimated logarithmic population growth rate across runs.
-
-		std_log_growth_rate
-			Standard deviation of the estimated growth rates.
-
-		mean_coefficient_of_variation
-			Average coefficient of variation of population size, indicating
-			the relative magnitude of population fluctuations.
-
-		survival_probability
-			Fraction of runs in which the population remains viable
-			(i.e., both sexes remain present).
-
-		population_preservation_probability
-			Fraction of runs in which the final population size is greater
-			than or equal to the initial population size.
-	"""
-
-	results = []
-
-	for i in range(num_runs):
-		res = measure_regime_stability(
-			grid_params,
-			num_ticks=num_ticks,
-			burn_frac=burn_frac,
-			seed=seed + i
-		)
-		results.append(res)
-
-	r_vals = np.array([r["r"] for r in results])
-	cv_vals = np.array([r["cv"] for r in results])
-	viability_rate = np.mean([r["viable"] for r in results])
-	preservation_rate = np.mean([r["population_preserved"] for r in results])
-
-	mean_r = np.mean(r_vals)
-	std_r = np.std(r_vals)
-	mean_cv = np.mean(cv_vals)
-
-	print("----- REGIME STABILITY SUMMARY -----")
-	print(f"{'Mean log population growth rate':45s}: {mean_r:.6f}")
-	print(f"{'Standard deviation of log growth rate':45s}: {std_r:.6f}")
-	print(f"{'Mean coefficient of variation':45s}: {mean_cv:.6f}")
-	print(f"{'Viability preservation probability':45s}: {viability_rate:.3f}")
-	print(f"{'Population preservation probability':45s}: {preservation_rate:.3f}")
-	print("--------------------------------------")
-
-
 def main_simulation(num_runs, num_ticks, num_prtrb_agents, init_seed, cutoff, debug_render=False, final_render=False, lyapunov_final_render=False, **grid_params):
 	"""
 	Execute the main experiment pipeline.
@@ -939,7 +868,7 @@ def main_simulation(num_runs, num_ticks, num_prtrb_agents, init_seed, cutoff, de
 
 
 num_runs=20
-num_ticks=15000
+num_ticks=150
 num_prtrb_agents=2
 init_seed=123
 cutoff=0.05
@@ -955,9 +884,9 @@ which cascades via nonlinear reproduction and energy redistribution.
 - Both agent types are tuned to operate in comparable fluctuation-dominated ecological regimes.
 
 Parameter set characteristics:
-    • Avoid trivial extinction.
-    • Avoid immediate saturation.
-    • Maximize observable dynamical instability.
+	• Avoid trivial extinction.
+	• Avoid immediate saturation.
+	• Maximize observable dynamical instability.
 
 The goal is dynamical comparability, not ecological realism.
 """
@@ -977,12 +906,6 @@ grid_params = {
 	"use_nn": False
 }
 
-regime_statistics(
-	grid_params=grid_params,
-	num_runs=num_runs,
-	num_ticks=num_ticks
-)
-
 main_simulation(
 	num_runs=num_runs,
 	num_ticks=num_ticks,
@@ -1001,9 +924,9 @@ This regime is intentionally near-critical. Small perturbations alter early repr
 which cascades via nonlinear reproduction and energy redistribution.
 
 Parameter set characteristics:
-    • Avoid trivial extinction.
-    • Avoid immediate saturation.
-    • Maximize observable dynamical instability.
+	• Avoid trivial extinction.
+	• Avoid immediate saturation.
+	• Maximize observable dynamical instability.
 """
 
 # near-critical ecological growth regime - nn agents
@@ -1021,17 +944,12 @@ grid_params = {
 	"use_nn": True
 }
 
-regime_statistics(
-	grid_params=grid_params,
-	num_runs=num_runs,
-	num_ticks=num_ticks
-)
-
 main_simulation(
 	num_runs=num_runs,
 	num_ticks=num_ticks,
 	num_prtrb_agents=num_prtrb_agents,
 	init_seed=init_seed,
+	cutoff=cutoff,
 	**grid_params
 )
 
@@ -1068,17 +986,12 @@ grid_params = {
 	"use_nn": False
 }
 
-regime_statistics(
-	grid_params=grid_params,
-	num_runs=num_runs,
-	num_ticks=num_ticks
-)
-
 main_simulation(
 	num_runs=num_runs,
 	num_ticks=num_ticks,
 	num_prtrb_agents=num_prtrb_agents,
 	init_seed=init_seed,
+	cutoff=cutoff,
 	**grid_params
 )
 
@@ -1099,16 +1012,11 @@ grid_params = {
 	"use_nn": True
 }
 
-regime_statistics(
-	grid_params=grid_params,
-	num_runs=num_runs,
-	num_ticks=num_ticks
-)
-
 main_simulation(
 	num_runs=num_runs,
 	num_ticks=num_ticks,
 	num_prtrb_agents=num_prtrb_agents,
 	init_seed=init_seed,
+	cutoff=cutoff,
 	**grid_params
 )
