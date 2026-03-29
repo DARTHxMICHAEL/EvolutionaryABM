@@ -604,12 +604,11 @@ def main_analysis(g1, g2, num_ticks=50, render=False, trial=1, cutoff=0.2, **gri
 
 	# -- lyap --
 	log_diffs = np.log(diffs)
-	cutoff = max(10, int(cutoff * num_ticks))
-	cutoff_pct = (cutoff / num_ticks) * 100
+	cutoff_idx = max(10, int(cutoff * num_ticks))
+	cutoff_pct = (cutoff_idx / num_ticks) * 100
 
-	# early-time linear regime cutoff
-	x = np.arange(cutoff)
-	y = log_diffs[:cutoff]
+	x = np.arange(cutoff_idx)
+	y = log_diffs[:cutoff_idx]
 
 	slope, _ = np.polyfit(x, y, 1)
 	lyap = slope
@@ -638,10 +637,9 @@ def main_analysis(g1, g2, num_ticks=50, render=False, trial=1, cutoff=0.2, **gri
 
 	logN = np.log(pop_history_safe[start:])
 
+	r = float("nan")
 	if len(logN) > 5:
 		r, _ = np.polyfit(t_vals, logN, 1)
-	else:
-		r = float("nan")
 
 	meanN = np.mean(pop_history[start:])
 	stdN = np.std(pop_history[start:])
@@ -650,14 +648,14 @@ def main_analysis(g1, g2, num_ticks=50, render=False, trial=1, cutoff=0.2, **gri
 	print(
 		f"[Run {trial+1:02d}] "
 		f"λ = {lyap:.5f} | "
-		f"cutoff = {cutoff:6.2f}% | "
+		f"cutoff = {cutoff_pct:.2f}% | "
 		f"ΔH = {shannon_diff:.5f}"
 	)
 
 	# --- divergence trajectory plot ---
 	plt.figure(figsize=(6, 4))
 	plt.plot(range(len(diffs)), diffs, label='d(t) trajectory')
-	plt.axvline(x=cutoff, color='red', linestyle='--', label=f'Cutoff ({cutoff:.1f}%)')
+	plt.axvline(x=cutoff_idx, color='red', linestyle='--', label=f'Cutoff ({cutoff_pct:.1f}%)')
 	plt.xlabel('Tick')
 	plt.ylabel('Phase-space distance d(t)')
 	plt.title(f'Lyapunov Divergence Run {trial+1}')
@@ -868,7 +866,7 @@ def main_simulation(num_runs, num_ticks, num_prtrb_agents, init_seed, cutoff, de
 
 
 num_runs=20
-num_ticks=150
+num_ticks=15000
 num_prtrb_agents=2
 init_seed=123
 cutoff=0.05
