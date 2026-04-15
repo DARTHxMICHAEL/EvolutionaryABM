@@ -244,7 +244,7 @@ class Grid:
 		self.rng.shuffle(possible_spots)
 
 		num_children = min(len(possible_spots), max_children)
-		
+
 		if num_children == 0:
 			return
 
@@ -424,7 +424,7 @@ def shannon_entropy(grid, energy_eps=6):
 	Agents are grouped into categorical states based on sex and an energy
 	threshold (HighE / LowE). Food types, walls, and empty cells are classified discretely.
 
-	Shannon entropy measures the structural diversity at a coarse ecological level, while the Lyapunov 
+	Shannon entropy measures the structural diversity at a coarse ecological level, while the Lyapunov
 	exponent measures microscopic trajectory sensitivity in continuous state space.
 
 	The entropy is computed as:
@@ -622,7 +622,7 @@ def main_analysis(g1, g2, num_ticks=50, render=False, trial=1, cutoff=0.2, **gri
 	pop_history = np.array(pop_history)
 	g = g1
 	burn_frac = 0.3
-	
+
 	if pop_history[-1] == 0:
 		viable = 0
 	else:
@@ -813,7 +813,7 @@ def check_determinism(num_ticks, seed, debug_render=False, final_render=True, **
 	return True
 
 
-def main_simulation(num_runs, num_ticks, num_prtrb_agents, init_seed, cutoff, debug_render=False, final_render=False, lyapunov_final_render=False, **grid_params):
+def main_simulation(num_runs, num_ticks, num_prtrb_agents, init_seed, cutoff, debug_render=False, final_render=True, lyapunov_final_render=True, **grid_params):
 	"""
 	Execute the main experiment pipeline.
 
@@ -864,17 +864,17 @@ def main_simulation(num_runs, num_ticks, num_prtrb_agents, init_seed, cutoff, de
 	print("--------------------------------------")
 
 
-
 num_runs=20
 num_ticks=15000
 num_prtrb_agents=2
 init_seed=123
-cutoff=0.05
+cutoff=0.015
+
 
 """
 Near-critical ecological growth regime - Random Driven Agents.
 --- ---
-This regime is intentionally near-critical. Small perturbations alter early reproduction timing, 
+This regime is intentionally near-critical. Small perturbations alter early reproduction timing,
 which cascades via nonlinear reproduction and energy redistribution.
 
 - Lyapunov exponent measures sensitivity to microscopic perturbations.
@@ -897,8 +897,8 @@ grid_params = {
 	"min_child_energy": 7,
 	"reproduction_cost": 8,
 	"food_respawn_rate": 0.012,
-	"num_agents": 30,
-	"num_apples": 40,
+	"num_agents": 15,
+	"num_apples": 30,
 	"num_oranges": 30,
 	"num_walls": 60,
 	"use_nn": False
@@ -914,11 +914,10 @@ main_simulation(
 )
 
 
-print("\n")
 """
 Near-critical ecological growth regime - ANN Driven Agents.
 --- ---
-This regime is intentionally near-critical. Small perturbations alter early reproduction timing, 
+This regime is intentionally near-critical. Small perturbations alter early reproduction timing,
 which cascades via nonlinear reproduction and energy redistribution.
 
 Parameter set characteristics:
@@ -936,8 +935,8 @@ grid_params = {
 	"reproduction_cost": 8,
 	"food_respawn_rate": 0.012,
 	"num_agents": 80,
-	"num_apples": 800,
-	"num_oranges": 800,
+	"num_apples": 900,
+	"num_oranges": 900,
 	"num_walls": 60,
 	"use_nn": True
 }
@@ -952,7 +951,6 @@ main_simulation(
 )
 
 
-print("\n")
 """
 Identical ecological constraints scenario.
 --- ---
@@ -964,7 +962,7 @@ Purpose:
 - Isolate the effect of decision mechanism alone.
 - Observe whether NN agents shift the effective dynamical phase
   under identical ecological pressure.
-  
+
 This is not regime-matched.
 This is mechanism-under-identical-constraints.
 """
@@ -978,36 +976,10 @@ grid_params = {
 	"reproduction_cost": 8,
 	"food_respawn_rate": 0.012,
 	"num_agents": 80,
-	"num_apples": 800,
-	"num_oranges": 800,
+	"num_apples": 900,
+	"num_oranges": 900,
 	"num_walls": 60,
 	"use_nn": False
-}
-
-main_simulation(
-	num_runs=num_runs,
-	num_ticks=num_ticks,
-	num_prtrb_agents=num_prtrb_agents,
-	init_seed=init_seed,
-	cutoff=cutoff,
-	**grid_params
-)
-
-
-print("\n")
-# identical ecological constraints - nn agents
-grid_params = {
-	"width": 100,
-	"height": 100,
-	"metabolic_cost":0.9,
-	"min_child_energy": 7,
-	"reproduction_cost": 8,
-	"food_respawn_rate": 0.012,
-	"num_agents": 80,
-	"num_apples": 800,
-	"num_oranges": 800,
-	"num_walls": 60,
-	"use_nn": True
 }
 
 main_simulation(
