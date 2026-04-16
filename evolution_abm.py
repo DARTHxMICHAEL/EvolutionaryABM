@@ -743,7 +743,8 @@ def compare_grids(num_ticks=50, num_perturbed_agents=1, seed=123, final_render=T
 	# --- regime stats ---
 	mean_r = np.mean(r_vals)
 	std_r = np.std(r_vals)
-	mean_cv = np.mean(cv_vals)
+	valid_cvs = [cv for cv in cv_vals if np.isfinite(cv)]
+	mean_cv = np.mean(valid_cvs)
 	viability_rate = np.mean(viable_flags)
 	preservation_rate = np.mean(pop_preserved_flags)
 
